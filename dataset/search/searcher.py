@@ -3,11 +3,7 @@ import os
 import time
 import json
 import requests
-#import logging
 from requests import exceptions
-
-# Absolute directory of this file
-FILE_DIR = os.path.dirname(os.path.realpath(__file__))
 
 
 SEARCH_ENGINES = ("bing", "google")
@@ -39,6 +35,7 @@ QUERIES = [
 ]
 # The checkpoint file recording the search progress (shouldn't be empty!)
 CHECKPOINT = "search_progress.json"
+FILE_DIR = os.path.dirname(os.path.realpath(__file__))  # absolute directory of this file
 CHECKPOINT = os.path.join(FILE_DIR, CHECKPOINT)  # force relative-to-file paths
 
 MAX_RESULTS = 1e6  # search results limit (this limit is soft/approximate)
@@ -69,10 +66,6 @@ def api_search(search_engine, headers, params, ignore_error=IGNORE_STATUS_ERRORS
 			exit()
 
 	return result, status_code
-
-
-def export_to_csv(image_urls, fname="image_urls"):
-	pass
 
 
 ###########################
@@ -120,11 +113,15 @@ class DatasetSearcher:
 			print("Total image urls found = {}.".format(len(self.image_urls)))
 			print("Time elapsed = {:.3f} seconds.".format(time.time() - start_time))
 
-			# Save final results, and export image urls to a csv file
+			# Save final results, and export image urls
 			self.save()
-			export_to_csv(self.image_urls)
+			self.export_image_urls()
 
-		except (Exception, KeyboardInterrupt)  as e:
+		except KeyboardInterrupt:
+			print("Interrupted.")
+			self.save()
+			
+		except Exception as e:
 			# Interrupt all exceptions and keyboard interrupt to save progress
 			print("Error!")
 			self.save()
@@ -265,6 +262,10 @@ class DatasetSearcher:
 		search_json["image_urls"]   = self.image_urls
 
 		return search_json
+
+	def export_image_urls(self, fname="image_urls.csv"):
+		with open(fname, "w") as f:
+			f.writelines(image_url + "\n" for image_url in self.image_urls)
 
 
 ###########################
