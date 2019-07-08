@@ -6,6 +6,9 @@ import requests
 #import logging
 from requests import exceptions
 
+# Absolute directory of this file
+FILE_DIR = os.path.dirname(os.path.realpath(__file__))
+
 
 SEARCH_ENGINES = ("bing", "google")
 
@@ -26,21 +29,21 @@ API_KEY = {
 }
 GOOGLE_CX = os.environ["GOOGLE_CX"]
 
-# the queries of the image search goes here
+
+# The queries of the image search goes here
 QUERIES = [
 	"makeup before after",
 	"makeup before after instagram",
 	"before and after makeup faces",
 	"makeup transformation faces",
 ]
+# The checkpoint file recording the search progress (shouldn't be empty!)
+CHECKPOINT = "search_progress.json"
+CHECKPOINT = os.path.join(FILE_DIR, CHECKPOINT)  # force relative-to-file paths
+
 MAX_RESULTS = 1e6  # search results limit (this limit is soft/approximate)
 DOWNLOAD_THUMBNAIL = False  # Download thumbnails instead of the actual image
-
-DATASET_DIR = "."  # name of the folder where the images will be stored
-CHECKPOINT = False  # continue downloading from checkpoint, if any
-METADATA_FNAME = "search_metadata.json"  # file name where metadata is saved
-
-IGNORE_STATUS_ERRORS = False  # ignore once at most
+IGNORE_STATUS_ERRORS = False  # ignore api search errors
 
 
 def api_search(search_engine, headers, params, ignore_error=IGNORE_STATUS_ERRORS):
@@ -74,23 +77,21 @@ def export_to_csv(image_urls, fname="image_urls"):
 
 ###########################
 class DatasetSearcher:
-	def __init__(self,
-		dataset_dir=DATASET_DIR,
-		checkpoint=CHECKPOINT,
-		queries=QUERIES):
+	def __init__(self, queries, checkpoint, load_from_checkpoint=True):
 
-		self.dataset_dir = dataset_dir
+		# Check if queries is a list of strings
+		assert isinstance(queries, list)
+		for query in queries: assert isinstance(query, str)
+		assert isinstance(checkpoint, str) and checkpoint != ""
+
+		self.checkpoint = checkpoint
 		self.queries = queries       # the search queries for building the dataset
 		self.query_index = 0         # the index of the current search query
 		self.image_urls = []         # the url of the contents (images)
 		self.reset_search_indices()  # reset api-specific search index values
 
-		# Create dataset directory if it doesn't exist
-		if not os.path.isdir(self.dataset_dir):
-			os.mkdir(self.dataset_dir)
-
-		# Load from default file
-		if checkpoint:
+		# Load from checkpoint, if any
+		if load_from_checkpoint:
 			self.load()
 
 	def reset_search_indices(self):
@@ -116,8 +117,8 @@ class DatasetSearcher:
 				self.reset_search_indices()
 			
 			print()
-			print("Retrieved {} image urls from the whole search.".format(len(self.image_urls)))
-			print("Time elapsed: {:.3f} seconds.".format(time.time() - start_time))
+			print("Total image urls found = {}.".format(len(self.image_urls)))
+			print("Time elapsed = {:.3f} seconds.".format(time.time() - start_time))
 
 			# Save final results, and export image urls to a csv file
 			self.save()
@@ -223,50 +224,55 @@ class DatasetSearcher:
 
 	
 	###########################
-	def load(self, metadata_fname=METADATA_FNAME):
-		print("[*] Loading metadata from '{}'... ".format(metadata_fname), end="")
-		if os.path.isfile(self.dataset_dir + "/" + metadata_fname):
-			with open(self.dataset_dir + "/" + metadata_fname, "r") as f:
+	def load(self, checkpoint=None):
+		# Edit checkpoint path and prepend file path to it
+		if checkpoint is None: checkpoint = self.checkpoint
+
+		print("[*] Loading search progress from '{}'... ".format(checkpoint), end="")
+		if os.path.isfile(checkpoint):
+			with open(checkpoint, "r") as f:
 				dataset_metadata = json.load(f)
 				print("Loaded.")
 				self.from_json(dataset_metadata)
 		else:
-			print("Couldn't find file '{}' in dataset directory.".format(metadata_fname))
+			print("Couldn't find file.")
 			if "n" == input("Type anything to start a new search or 'n' to exit: "):
 				exit()
 
-	def save(self, metadata_fname=METADATA_FNAME):
-		print("[*] Saving metadata to '{}'... ".format(metadata_fname), end="")
-		with open(self.dataset_dir + "/" + metadata_fname, "w") as f:
-			dataset_metadata = self.to_json()
-			json.dump(dataset_metadata, f)
+	def save(self, checkpoint=None):
+		# Edit checkpoint path and prepend file path to it
+		if checkpoint is None: checkpoint = self.checkpoint
+
+		print("[*] Saving search progress to '{}'... ".format(checkpoint), end="")
+		with open(checkpoint, "w") as f:
+			search_json = self.to_json()
+			json.dump(search_json, f)
 			print("Saved.")
 
-	def from_json(self, dataset_metadata):
-		self.query_index = dataset_metadata["query_index"]
-		self.queries = dataset_metadata["queries"]
-		self.bing_offset = dataset_metadata["bing_offset"]
-		self.google_start = dataset_metadata["google_start"]
-		self.image_urls = dataset_metadata["image_urls"]
+	def from_json(self, search_json):
+		self.query_index  = search_json["query_index"]
+		self.queries      = search_json["queries"]
+		self.bing_offset  = search_json["bing_offset"]
+		self.google_start = search_json["google_start"]
+		self.image_urls   = search_json["image_urls"]
 
 	def to_json(self):
-		dataset_metadata = {}
-		dataset_metadata["query_index"] = self.query_index
-		dataset_metadata["queries"] = self.queries
-		dataset_metadata["bing_offset"] = self.bing_offset
-		dataset_metadata["google_start"] = self.google_start
-		dataset_metadata["image_urls"] = self.image_urls
+		search_json = {}
+		search_json["query_index"]  = self.query_index
+		search_json["queries"]      = self.queries
+		search_json["bing_offset"]  = self.bing_offset
+		search_json["google_start"] = self.google_start
+		search_json["image_urls"]   = self.image_urls
 
-		return dataset_metadata
+		return search_json
 
 
 ###########################
 def main():
 
 	searcher_params = {
-		"dataset_dir": DATASET_DIR,
-		"checkpoint": CHECKPOINT,
 		"queries": QUERIES,
+		"checkpoint": CHECKPOINT,
 	}
 
 	searcher = DatasetSearcher(**searcher_params)
