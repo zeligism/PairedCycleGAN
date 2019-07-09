@@ -35,12 +35,17 @@ QUERIES = [
 ]
 # The checkpoint file recording the search progress (shouldn't be empty!)
 CHECKPOINT = "search_progress.json"
-FILE_DIR = os.path.dirname(os.path.realpath(__file__))  # absolute directory of this file
-CHECKPOINT = os.path.join(FILE_DIR, CHECKPOINT)  # force relative-to-file paths
+# The file where image_urls will be exported to
+IMAGE_URLS = "../data/image_urls.csv"
 
 MAX_RESULTS = 1e6  # search results limit (this limit is soft/approximate)
 DOWNLOAD_THUMBNAIL = False  # Download thumbnails instead of the actual image
 IGNORE_STATUS_ERRORS = False  # ignore api search errors
+
+# Get absolute path of this file and force relative-to-file paths
+FILE_DIR = os.path.dirname(os.path.realpath(__file__))
+CHECKPOINT = os.path.join(FILE_DIR, CHECKPOINT)
+IMAGE_URLS = os.path.join(FILE_DIR, IMAGE_URLS)
 
 
 def api_search(search_engine, headers, params, ignore_error=IGNORE_STATUS_ERRORS):
@@ -70,7 +75,7 @@ def api_search(search_engine, headers, params, ignore_error=IGNORE_STATUS_ERRORS
 
 ###########################
 class DatasetSearcher:
-	def __init__(self, queries, checkpoint, load_from_checkpoint=True):
+	def __init__(self, queries=QUERIES, checkpoint=CHECKPOINT, load_from_checkpoint=True):
 
 		# Check if queries is a list of strings
 		assert isinstance(queries, list)
@@ -120,7 +125,7 @@ class DatasetSearcher:
 		except KeyboardInterrupt:
 			print("Interrupted.")
 			self.save()
-			
+
 		except Exception as e:
 			# Interrupt all exceptions and keyboard interrupt to save progress
 			print("Error!")
@@ -263,7 +268,7 @@ class DatasetSearcher:
 
 		return search_json
 
-	def export_image_urls(self, fname="image_urls.csv"):
+	def export_image_urls(self, fname=IMAGE_URLS):
 		with open(fname, "w") as f:
 			f.writelines(image_url + "\n" for image_url in self.image_urls)
 
