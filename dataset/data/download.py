@@ -15,9 +15,11 @@ IMAGE_URLS = os.path.join(FILE_DIR, IMAGE_URLS)
 # Create dataset directory if it doesn't exist
 if not os.path.isdir(DATASET_DIR): os.mkdir(DATASET_DIR)
 
-TRY_AGAIN = False  # retry previously failed requests
-ERROR_TAG = b"(error)"
-IMAGE_HAS_ERROR = lambda f: f.read()[:len(ERROR_TAG)] == ERROR_TAG
+# Variables to deal with errors occuring during download
+TRY_AGAIN = False  # retry previously failed requests (for a second run of download.py)
+ERROR_TAG = b"(error)"  # The error tag is always prepended to an error file
+IS_ERROR_FILE = lambda f: f.read()[:len(ERROR_TAG)] == ERROR_TAG
+
 
 def download_image(image_url, image_path="untitled"):
 
@@ -52,7 +54,7 @@ def download_images(image_urls, dataset_dir=DATASET_DIR):
         # don't want to try downloading it again.
         if os.path.exists(image_path):
             with open(image_path, "rb") as image:
-                if not IMAGE_HAS_ERROR(image):
+                if not IS_ERROR_FILE(image):
                     continue  # skip because we already downloaded this image
                 if not TRY_AGAIN:
                     continue  # skip because we don't want to try again
@@ -60,33 +62,29 @@ def download_images(image_urls, dataset_dir=DATASET_DIR):
         # Download image and check download success
         print("[{:05d}]  Downloading {} ... ".format(index, image_url), end="")
         status = download_image(image_url, image_path)
-
-        # Add image url to dataset metadata (can add more metadata later)
         print(status)
 
 
-def delete_error_images(num_image_urls, dataset_dir=DATASET_DIR):
+def delete_error_files(num_image_urls, dataset_dir=DATASET_DIR):
     
-    # Create image name and path
-    index = 0
-    num_errors = 0
-    image_name = "{:05d}".format(index)
-    image_path = os.path.join(dataset_dir, image_name)
+    num_errors_files = 0
 
-    while index < num_image_urls:
-        if os.path.exists(image_path):
-            # Delete image if it has an error
-            with open(image_path, "rb") as image:
-                if IMAGE_HAS_ERROR(image):
-                    print("Removing %s" % image_name)
-                    num_errors+=1
-                    os.remove(image_path)
-        # Next image
-        index += 1
+    for index in range(num_image_urls):
+        
+        # Create image name and path
         image_name = "{:05d}".format(index)
         image_path = os.path.join(dataset_dir, image_name)
 
-    print(num_errors)
+        # Delete error file, if any
+        if os.path.exists(image_path):
+            with open(image_path, "rb") as image:
+                if IS_ERROR_FILE(image):
+                    print("Removing %s" % image_name)
+                    os.remove(image_path)
+                    num_errors_files += 1
+
+    print("Deleted %d error files." % num_errors_files)
+    return num_errors_files
 
 
 def main():
