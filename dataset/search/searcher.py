@@ -38,14 +38,14 @@ CHECKPOINT = "search_progress.json"
 # The file where image_urls will be exported to
 IMAGE_URLS = "image_urls.csv"
 
-MAX_RESULTS = 1e6  # search results limit (this limit is soft/approximate)
-DOWNLOAD_THUMBNAIL = False  # Download thumbnails instead of the actual image
-IGNORE_STATUS_ERRORS = False  # ignore api search errors
-
 # Get absolute path of this file and force relative-to-file paths
 FILE_DIR = os.path.dirname(os.path.realpath(__file__))
 CHECKPOINT = os.path.join(FILE_DIR, CHECKPOINT)
 IMAGE_URLS = os.path.join(FILE_DIR, IMAGE_URLS)
+
+MAX_RESULTS = 1e6  # search results limit (this limit is soft/approximate)
+DOWNLOAD_THUMBNAIL = False  # Download thumbnails instead of the actual image
+IGNORE_STATUS_ERRORS = False  # ignore api search errors
 
 
 def api_search(search_engine, headers, params, ignore_error=IGNORE_STATUS_ERRORS):

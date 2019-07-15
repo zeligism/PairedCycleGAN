@@ -8,7 +8,7 @@ from PIL import Image
 # Source directory of images to be split (before makeup and after makeup)
 SOURCE_DIR = os.path.join("processing", "cleaned")
 # Target directory where split images will be saved
-TARGET_DIR = os.path.join(SOURCE_DIR, "split")
+TARGET_DIR = os.path.join("processing", "split")
 
 # Get absolute path of this file and force relative-to-file paths
 FILE_DIR = os.path.dirname(os.path.realpath(__file__))
