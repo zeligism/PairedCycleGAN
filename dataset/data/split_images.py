@@ -21,6 +21,12 @@ if not os.path.isdir(TARGET_DIR): os.mkdir(TARGET_DIR)
 
 
 def split_image_vertically(fname):
+    """
+    Splits the image in `fname` vertically (left and right) and save the splits.
+
+    Args:
+        fname: The name of the file holding the image to be split.
+    """
 
     with Image.open(os.path.join(SOURCE_DIR, fname)) as img:
 

@@ -49,7 +49,18 @@ IGNORE_STATUS_ERRORS = False  # ignore api search errors
 
 
 def api_search(search_engine, headers, params, ignore_error=IGNORE_STATUS_ERRORS):
+	"""
+	Performs an API request to a search API (either Bing or Google in our case).
 
+	Args:
+		search_engine: The name of the search engine to use (from SEARCH_ENGINES).
+		headers: The headers of the API request.
+		params: The parameters of the API request.
+		ignore_error: Ignore request error and continue without prompting the user.
+
+	Returns:
+		A tuple containing the response, as a dictionary, and its status code.
+	"""
 	assert search_engine in SEARCH_ENGINES
 	endpoint = API_ENDPOINT[search_engine]
 
@@ -93,12 +104,19 @@ class DatasetSearcher:
 			self.load()
 
 	def reset_search_indices(self):
+		"""
+		Reset the indices that describe the search progress of the current query.
+		"""
 		self.bing_offset = 0   # offset value of the image search (for Bing)
 		self.google_start = 1  # offset value of the image search (for Google)
 
 
 	###########################
 	def search(self):
+		"""
+		Search for images from all the queries using Bing's and Google's API.
+		"""
+
 		try:
 			start_time = time.time()  # track time
 			while self.query_index < len(self.queries):
@@ -122,7 +140,7 @@ class DatasetSearcher:
 			self.save()
 			self.export_image_urls()
 
-		except KeyboardInterrupt:
+		except (KeyboardInterrupt, SystemExit):
 			print("Interrupted.")
 			self.save()
 
@@ -135,6 +153,12 @@ class DatasetSearcher:
 
 
 	def search_bing(self, query):
+		"""
+		Searches for `query` using Bing image search API.
+
+		Args:
+			query: query: The query of the search.
+		"""
 
 		old_image_urls = set(self.image_urls)  # to avoid duplicates
 		content_url = "thumbnailUrl" if DOWNLOAD_THUMBNAIL else "contentUrl"
@@ -183,6 +207,12 @@ class DatasetSearcher:
 
 
 	def search_google(self, query):
+		"""
+		Searches for `query` using Google custom search API.
+
+		Args:
+			query: The query of the search.
+		"""
 
 		old_image_urls = set(self.image_urls)  # to avoid duplicates
 
@@ -227,7 +257,13 @@ class DatasetSearcher:
 	
 	###########################
 	def load(self, checkpoint=None):
-		# Edit checkpoint path and prepend file path to it
+		"""
+		Loads the searcher from a json checkpoint file.
+
+		Args:
+			checkpoint: The name of the checkpoint file.
+		"""
+
 		if checkpoint is None: checkpoint = self.checkpoint
 
 		print("[*] Loading search progress from '{}'... ".format(checkpoint), end="")
@@ -241,8 +277,15 @@ class DatasetSearcher:
 			if "n" == input("Type anything to start a new search or 'n' to exit: "):
 				exit()
 
+
 	def save(self, checkpoint=None):
-		# Edit checkpoint path and prepend file path to it
+		"""
+		Saves the searcher to a json checkpoint file.
+
+		Args:
+			checkpoint: The name of the checkpoint file.
+		"""
+
 		if checkpoint is None: checkpoint = self.checkpoint
 
 		print("[*] Saving search progress to '{}'... ".format(checkpoint), end="")
@@ -251,14 +294,30 @@ class DatasetSearcher:
 			json.dump(search_json, f)
 			print("Saved.")
 
+
 	def from_json(self, search_json):
+		"""
+		Copy the data from `search_json` to `self`.
+
+		Args:
+			search_json: A dict holding the progress data of the given searcher.
+		"""
+
 		self.query_index  = search_json["query_index"]
 		self.queries      = search_json["queries"]
 		self.bing_offset  = search_json["bing_offset"]
 		self.google_start = search_json["google_start"]
 		self.image_urls   = search_json["image_urls"]
 
+
 	def to_json(self):
+		"""
+		Copy the data from `self` to `search_json`.
+
+		Returns:
+			A dict holding the progress data of `self`.
+		"""
+
 		search_json = {}
 		search_json["query_index"]  = self.query_index
 		search_json["queries"]      = self.queries
@@ -268,7 +327,15 @@ class DatasetSearcher:
 
 		return search_json
 
+
 	def export_image_urls(self, fname=IMAGE_URLS):
+		"""
+		Creates a simple file of image urls, one url per line
+
+		Args:
+			fname: The name of the file where the urls will be written.
+		"""
+		
 		with open(fname, "w") as f:
 			f.writelines(image_url + "\n" for image_url in self.image_urls)
 

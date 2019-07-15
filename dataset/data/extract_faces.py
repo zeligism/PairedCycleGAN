@@ -23,6 +23,13 @@ if not os.path.isdir(TARGET_DIR): os.mkdir(TARGET_DIR)
 
 
 def extract_face(fname):
+    """
+    Extract the first detected face from the image in `fname` and save it.
+
+    Args:
+        fname: The name of the file holding the image.
+    """
+
     name, ext = fname.split(".")
     face_image_path = os.path.join(TARGET_DIR, name + "-face" + "." + ext)
     if os.path.exists(face_image_path): return
