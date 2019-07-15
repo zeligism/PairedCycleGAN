@@ -107,12 +107,14 @@ venv.bak/
 ### Abzollo ###
 .ipynb
 secret*
-test.py
+test*.py
+test*.ipynb
 search_progress.json
 image_urls.csv
 
 # Dataset
 dataset/data/raw/
 dataset/data/cleaned/
-dataset/data/split/
+dataset/data/processing/
+dataset/data/processed/
 

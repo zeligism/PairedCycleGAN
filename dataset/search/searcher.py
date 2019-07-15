@@ -36,7 +36,7 @@ QUERIES = [
 # The checkpoint file recording the search progress (shouldn't be empty!)
 CHECKPOINT = "search_progress.json"
 # The file where image_urls will be exported to
-IMAGE_URLS = "../data/image_urls.csv"
+IMAGE_URLS = "image_urls.csv"
 
 MAX_RESULTS = 1e6  # search results limit (this limit is soft/approximate)
 DOWNLOAD_THUMBNAIL = False  # Download thumbnails instead of the actual image

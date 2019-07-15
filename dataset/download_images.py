@@ -4,8 +4,8 @@ import requests
 import os
 
 # The file where image_urls will be exported to
-DATASET_DIR = "raw"
-IMAGE_URLS = "image_urls.csv"
+DATASET_DIR = os.path.join("data", "raw")
+IMAGE_URLS = os.path.join("search", "image_urls.csv")
 
 # Get absolute path of this file and force relative-to-file paths
 FILE_DIR = os.path.dirname(os.path.realpath(__file__))
