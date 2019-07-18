@@ -14,7 +14,7 @@ def main():
 			image_urls |= set(p1.findall(html))
 			image_urls |= set(p2.findall(html))
 	
-	with open("../../data/pinterest_urls.csv", "w") as f:
+	with open("pinterest_urls.csv", "w") as f:
 		f.writelines(image_url+"\n" for image_url in image_urls)
 
 
