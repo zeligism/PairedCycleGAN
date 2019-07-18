@@ -1,6 +1,7 @@
 
 import os
 import time
+import argparse
 import json
 import requests
 from requests import exceptions
@@ -33,22 +34,18 @@ QUERIES = [
 	"before and after makeup faces",
 	"makeup transformation faces",
 ]
-# The checkpoint file recording the search progress (shouldn't be empty!)
-CHECKPOINT = "search_progress.json"
-# The file where image_urls will be exported to
-IMAGE_URLS = "image_urls.csv"
 
 # Get absolute path of this file and force relative-to-file paths
 FILE_DIR = os.path.dirname(os.path.realpath(__file__))
-CHECKPOINT = os.path.join(FILE_DIR, CHECKPOINT)
-IMAGE_URLS = os.path.join(FILE_DIR, IMAGE_URLS)
+# The checkpoint file recording the search progress
+CHECKPOINT = os.path.join(FILE_DIR, "search_progress.json")
+# The file where image_urls will be exported to
+IMAGE_URLS = os.path.join(FILE_DIR, "image_urls.csv")
 
 MAX_RESULTS = 1e6  # search results limit (this limit is soft/approximate)
-DOWNLOAD_THUMBNAIL = False  # Download thumbnails instead of the actual image
-IGNORE_STATUS_ERRORS = False  # ignore api search errors
 
 
-def api_search(search_engine, headers, params, ignore_error=IGNORE_STATUS_ERRORS):
+def api_search(search_engine, headers, params):
 	"""
 	Performs an API request to a search API (either Bing or Google in our case).
 
@@ -76,10 +73,6 @@ def api_search(search_engine, headers, params, ignore_error=IGNORE_STATUS_ERRORS
 	except exceptions.HTTPError as e:
 		print("Bad request! ({})".format(status_code))
 		print(e)
-		if ignore_error:
-			print("Ignoring this error... ")
-		elif "n" == input("Type anything to continue or 'n' to exit: "):
-			exit()
 
 	return result, status_code
 
@@ -112,7 +105,7 @@ class DatasetSearcher:
 
 
 	###########################
-	def search(self):
+	def search(self, search_engines=["bing"]):
 		"""
 		Search for images from all the queries using Bing's and Google's API.
 		"""
@@ -125,8 +118,8 @@ class DatasetSearcher:
 				query = self.queries[self.query_index]
 
 				# Search for images
-				self.search_bing(query)
-				self.search_google(query)
+				if "bing" in search_engines: self.search_bing(query)
+				if "google" in search_engines: self.search_google(query)
 
 				# Finished search for this query
 				self.query_index += 1
@@ -138,7 +131,6 @@ class DatasetSearcher:
 
 			# Save final results, and export image urls
 			self.save()
-			self.export_image_urls()
 
 		except (KeyboardInterrupt, SystemExit):
 			print("Interrupted.")
@@ -161,7 +153,6 @@ class DatasetSearcher:
 		"""
 
 		old_image_urls = set(self.image_urls)  # to avoid duplicates
-		content_url = "thumbnailUrl" if DOWNLOAD_THUMBNAIL else "contentUrl"
 		totalEstimatedMatches = 1e6  # to ensure that offset is smaller first
 
 		# Define headers and default params of bing image search api
@@ -188,8 +179,8 @@ class DatasetSearcher:
 			print("Done.")
 
 			# Search for image urls and filter out the already saved urls
-			new_image_urls = [image[content_url] for image in result["value"]
-				if image[content_url] not in old_image_urls]
+			new_image_urls = [image["contentUrl"] for image in result["value"]
+				if image["contentUrl"] not in old_image_urls]
 			self.image_urls += new_image_urls
 			print("  Retrieved {} new image urls.".format(len(new_image_urls)))
 
@@ -341,17 +332,35 @@ class DatasetSearcher:
 
 
 ###########################
-def main():
+def main(args):
 
 	searcher_params = {
-		"queries": QUERIES,
-		"checkpoint": CHECKPOINT,
+		"queries": args.queries,
+		"checkpoint": args.checkpoint,
 	}
 
 	searcher = DatasetSearcher(**searcher_params)
-	searcher.search()
+	searcher.search(args.search_engines)
+	searcher.export_image_urls(args.out)
 
 
 if __name__ == '__main__':
-	main()
+
+	parser = argparse.ArgumentParser(description="Search images using Bing and Google.")
+	
+	parser.add_argument("-q", "--queries", nargs="+", type=str, default=QUERIES,
+		help="List of queries to be searched.")
+	parser.add_argument("--checkpoint", type=str, default=CHECKPOINT,
+		help="Name of checkpoint file.")
+	parser.add_argument("--search_engines", nargs="+", type=str, default=SEARCH_ENGINES,
+		help="The search engines to be used.",
+		choices=SEARCH_ENGINES)
+	parser.add_argument("-o", "--out", type=str, default=IMAGE_URLS,
+		help="The output file where the urls of the images will be saved.")
+	# @TODO: Add the rest of args, edit Searcher so it doesn't use hyperparameters directly.
+	
+	args = parser.parse_args()
+	print(args); exit()
+
+	main(args)
 
