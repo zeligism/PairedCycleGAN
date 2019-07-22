@@ -109,8 +109,9 @@ venv.bak/
 secret*
 test*.py
 test*.ipynb
-search_progress.json
+searcher.json
 image_urls.csv
+*.html
 
 # Dataset
 dataset/data/raw/

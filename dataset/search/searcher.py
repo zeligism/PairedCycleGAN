@@ -1,33 +1,19 @@
 
 import os
+import sys
 import time
 import argparse
 import json
 import requests
-from requests import exceptions
 
-
+# The search engines we are using
 SEARCH_ENGINES = ("bing", "google")
 
-if "BING_API_KEY" not in os.environ:
-	os.environ["BING_API_KEY"] = input("Please enter your Bing API Key: ")
-if "GOOGLE_API_KEY" not in os.environ:
-	os.environ["GOOGLE_API_KEY"] = input("Please enter your Google API Key: ")
-if "GOOGLE_CX" not in os.environ:
-	os.environ["GOOGLE_CX"] = input("Please enter your Google Custom Search CX: ")
+# The endpoints for the API of the search engines
+BING_API_ENDPOINT = "https://api.cognitive.microsoft.com/bing/v7.0/images/search"
+GOOGLE_API_ENDPOINT = "https://www.googleapis.com/customsearch/v1"
 
-API_ENDPOINT = {
-	"bing":   "https://api.cognitive.microsoft.com/bing/v7.0/images/search",
-	"google": "https://www.googleapis.com/customsearch/v1",
-}
-API_KEY = {
-	"bing":   os.environ["BING_API_KEY"],
-	"google": os.environ["GOOGLE_API_KEY"],
-}
-GOOGLE_CX = os.environ["GOOGLE_CX"]
-
-
-# The queries of the image search goes here
+# The queries of the image search
 QUERIES = [
 	"makeup before after",
 	"makeup before after instagram",
@@ -35,22 +21,35 @@ QUERIES = [
 	"makeup transformation faces",
 ]
 
+# Search results limit (this limit is soft/approximate)
+MAX_RESULTS = 1e6
+
 # Get absolute path of this file and force relative-to-file paths
 FILE_DIR = os.path.dirname(os.path.realpath(__file__))
 # The checkpoint file recording the search progress
-CHECKPOINT = os.path.join(FILE_DIR, "search_progress.json")
+CHECKPOINT = os.path.join(FILE_DIR, "searcher.json")
 # The file where image_urls will be exported to
 IMAGE_URLS = os.path.join(FILE_DIR, "image_urls.csv")
 
-MAX_RESULTS = 1e6  # search results limit (this limit is soft/approximate)
+
+def init_api(search_engines):
+	"""
+	Initializes the necessary environment variables for the API requests.
+	"""
+	if "bing" in search_engines and "BING_API_KEY" not in os.environ:
+		os.environ["BING_API_KEY"] = input("Please enter your Bing API Key: ")
+	if "google" in search_engines and "GOOGLE_API_KEY" not in os.environ:
+		os.environ["GOOGLE_API_KEY"] = input("Please enter your Google API Key: ")
+	if "google" in search_engines and "GOOGLE_CX" not in os.environ:
+		os.environ["GOOGLE_CX"] = input("Please enter your Google Custom Search CX: ")
 
 
-def api_search(search_engine, headers, params):
+def api_search(endpoint, headers, params):
 	"""
 	Performs an API request to a search API (either Bing or Google in our case).
 
 	Args:
-		search_engine: The name of the search engine to use (from SEARCH_ENGINES).
+		search_engine: The name of the search engine to use.
 		headers: The headers of the API request.
 		params: The parameters of the API request.
 		ignore_error: Ignore request error and continue without prompting the user.
@@ -58,8 +57,6 @@ def api_search(search_engine, headers, params):
 	Returns:
 		A tuple containing the response, as a dictionary, and its status code.
 	"""
-	assert search_engine in SEARCH_ENGINES
-	endpoint = API_ENDPOINT[search_engine]
 
 	time.sleep(0.5)  # this ensures at most 2 requests per second
 	result = None
@@ -70,7 +67,7 @@ def api_search(search_engine, headers, params):
 		status_code = response.status_code
 		response.raise_for_status()
 		result = response.json()
-	except exceptions.HTTPError as e:
+	except requests.exceptions.HTTPError as e:
 		print("Bad request! ({})".format(status_code))
 		print(e)
 
@@ -78,11 +75,10 @@ def api_search(search_engine, headers, params):
 
 
 ###########################
-class DatasetSearcher:
-	def __init__(self, queries=QUERIES, checkpoint=CHECKPOINT, load_from_checkpoint=True):
+class DataSearcher:
+	def __init__(self, queries=[], checkpoint="checkpoint", load_from_checkpoint=True):
 
-		# Check if queries is a list of strings
-		assert isinstance(queries, list)
+		# Sanity checks
 		for query in queries: assert isinstance(query, str)
 		assert isinstance(checkpoint, str) and checkpoint != ""
 
@@ -110,10 +106,17 @@ class DatasetSearcher:
 		Search for images from all the queries using Bing's and Google's API.
 		"""
 
+		# Check if given search engines are string and make them lowercase
+		for s in search_engines: assert isinstance(s, str)
+		search_engines = [s.lower() for s in search_engines]
+
+		# Initialize API if not done yet
+		init_api(search_engines)
+
+		# Try to search for images using the given search_engines
 		try:
 			start_time = time.time()  # track time
 			while self.query_index < len(self.queries):
-
 				# Get current query
 				query = self.queries[self.query_index]
 
@@ -156,7 +159,7 @@ class DatasetSearcher:
 		totalEstimatedMatches = 1e6  # to ensure that offset is smaller first
 
 		# Define headers and default params of bing image search api
-		headers = {"Ocp-Apim-Subscription-Key": API_KEY["bing"]}
+		headers = {"Ocp-Apim-Subscription-Key": os.environ["BING_API_KEY"]}
 		params = {
 			"q": query,
 			"offset": self.bing_offset,
@@ -170,7 +173,7 @@ class DatasetSearcher:
 			# Search for images starting from the specified offset
 			print("Searching from offset %d ... " % self.bing_offset, end="")
 			params["offset"] = self.bing_offset
-			result, status_code = api_search("bing", headers, params)
+			result, status_code = api_search(BING_API_ENDPOINT, headers, params)
 
 			# Checking result of api search
 			if result is None or "value" not in result:
@@ -209,9 +212,9 @@ class DatasetSearcher:
 
 		 # Define headers and default params of google custom search api
 		params = {
-			"key": API_KEY["google"],
+			"key": os.environ["GOOGLE_API_KEY"],
 			"q": query,
-			"cx": GOOGLE_CX,
+			"cx": os.environ["GOOGLE_CX"],
 			"searchType": "image",
 			"start": 1,
 			"num": 10,
@@ -266,7 +269,7 @@ class DatasetSearcher:
 		else:
 			print("Couldn't find file.")
 			if "n" == input("Type anything to start a new search or 'n' to exit: "):
-				exit()
+				sys.exit()
 
 
 	def save(self, checkpoint=None):
@@ -339,7 +342,7 @@ def main(args):
 		"checkpoint": args.checkpoint,
 	}
 
-	searcher = DatasetSearcher(**searcher_params)
+	searcher = DataSearcher(**searcher_params)
 	searcher.search(args.search_engines)
 	searcher.export_image_urls(args.out)
 
@@ -348,13 +351,13 @@ if __name__ == '__main__':
 
 	parser = argparse.ArgumentParser(description="Search images using Bing and Google.")
 	
+	parser.add_argument("--search_engines", nargs="+", type=str, default=SEARCH_ENGINES,
+		help="The search engines to be used.",
+		choices=SEARCH_ENGINES)
 	parser.add_argument("-q", "--queries", nargs="+", type=str, default=QUERIES,
 		help="List of queries to be searched.")
 	parser.add_argument("--checkpoint", type=str, default=CHECKPOINT,
 		help="Name of checkpoint file.")
-	parser.add_argument("--search_engines", nargs="+", type=str, default=SEARCH_ENGINES,
-		help="The search engines to be used.",
-		choices=SEARCH_ENGINES)
 	parser.add_argument("-o", "--out", type=str, default=IMAGE_URLS,
 		help="The output file where the urls of the images will be saved.")
 	# @TODO: Add the rest of args, edit Searcher so it doesn't use hyperparameters directly.
