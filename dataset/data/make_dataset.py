@@ -25,7 +25,7 @@ def process_image(fname, index, source_dir, dest_dir):
     """
     
     img_full_name, ext = fname.split(".")
-    img_name, when = img_full_name.split("-")
+    img_name, when = img_full_name.split("-")  # when is either 'before' or 'after'
 
     # Path of source images
     src_before = os.path.join(source_dir, "{}-before.{}".format(img_name, ext))
