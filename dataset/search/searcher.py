@@ -363,7 +363,6 @@ if __name__ == '__main__':
 	# @TODO: Add the rest of args, edit Searcher so it doesn't use hyperparameters directly.
 	
 	args = parser.parse_args()
-	print(args); exit()
 
 	main(args)
 
