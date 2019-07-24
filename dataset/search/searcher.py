@@ -352,14 +352,14 @@ if __name__ == '__main__':
 	parser = argparse.ArgumentParser(description="Search images using Bing and Google.")
 	
 	parser.add_argument("--search_engines", nargs="+", type=str, default=SEARCH_ENGINES,
-		help="The search engines to be used.",
+		help="the search engines to be used.",
 		choices=SEARCH_ENGINES)
 	parser.add_argument("-q", "--queries", nargs="+", type=str, default=QUERIES,
-		help="List of queries to be searched.")
+		help="list of queries to be searched.")
 	parser.add_argument("--checkpoint", type=str, default=CHECKPOINT,
-		help="Name of checkpoint file.")
+		help="name of checkpoint file.")
 	parser.add_argument("-o", "--out", type=str, default=IMAGE_URLS,
-		help="The output file where the urls of the images will be saved.")
+		help="the output file where the urls of the images will be saved.")
 	# @TODO: Add the rest of args, edit Searcher so it doesn't use hyperparameters directly.
 	
 	args = parser.parse_args()
