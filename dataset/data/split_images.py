@@ -10,26 +10,26 @@ FILE_DIR = os.path.dirname(os.path.realpath(__file__))
 
 ### NOTE: we assume that all visible files in source dir are images ###
 SOURCE_DIR = os.path.join(FILE_DIR, "processing", "cleaned")
-DEST_DIR = os.path.join(FILE_DIR, "processing", "split")
+DEST_DIR = os.path.join(FILE_DIR, "processing", "splits")
 
 
-def split_image(fname, source_dir, dest_dir):
+def split_image(file_name, source_dir, dest_dir):
     """
-    Splits the image `fname` (left and right) and save the splits.
+    Splits the image `file_name` (to left and right) and save the splits.
 
     Args:
-        fname: The name of the file (image) to be split.
+        file_name: The name of the file (image) to be split.
         source_dir: Directory of source images.
-        dest_dir: Directory where processed images will be saved.
+        dest_dir: Directory where split images will be saved.
     """
 
-    with Image.open(os.path.join(source_dir, fname)) as img:
+    with Image.open(os.path.join(source_dir, file_name)) as img:
 
         # Remove extension from file name and rename split images
-        img_name = fname.split(".")[0]
-        ext = "." + img.format.lower()
-        img_path_left = os.path.join(dest_dir, img_name + "-before" + ext)
-        img_path_right = os.path.join(dest_dir, img_name + "-after" + ext)
+        img_name = file_name.split(".")[0]
+        ext = img.format.lower()
+        img_path_left = os.path.join(dest_dir, "{}-before.{}".format(img_name, ext))
+        img_path_right = os.path.join(dest_dir, "{}-after.{}".format(img_name, ext))
 
         if os.path.exists(img_path_left) or os.path.exists(img_path_right):
             return  # this checks if the images was already split
@@ -57,13 +57,13 @@ def split_images(source_dir, dest_dir):
     # Create destination directory if it doesn't exist
     if not os.path.isdir(dest_dir): os.mkdir(dest_dir)
 
-    for fname in files_iter(source_dir):
-        # Try to split the image
+    for file_name in files_iter(source_dir):
         try:
-            # We assume that fname has no dots except the one before its extension
-            print("Splitting image {}... ".format(fname.split(".")[0]), end="")
-            split_image(fname, source_dir, dest_dir)
+            # We assume that file_name has no dots except the one before its extension
+            print("Splitting image {}... ".format(file_name.split(".")[0]), end="")
+            split_image(file_name, source_dir, dest_dir)
             print("Done.")
+
         except Exception:
             print("Failed.")
 
