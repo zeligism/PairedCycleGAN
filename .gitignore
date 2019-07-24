@@ -114,8 +114,5 @@ image_urls.csv
 *.html
 
 # Dataset
-dataset/data/raw/
-dataset/data/cleaned/
-dataset/data/processing/
-dataset/data/processed/
+dataset/data/*/
 
