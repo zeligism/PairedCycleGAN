@@ -7,17 +7,15 @@ from torch.utils.data import Dataset
 from torchvision.transforms.functional import to_tensor, resize
 from data.utility import files_iter
 
-# Get absolute path and force relative-to-file paths
-FILE_DIR = os.path.dirname(os.path.realpath(__file__))
-DATASET_DIR = os.path.join(FILE_DIR, "processing", "faces")
-
-
 class MakeupDataset(Dataset):
-    def __init__(self, dataset_dir, landmarks_dir=None, transform=None):
+    def __init__(self, dataset_dir, with_landmarks=False, transform=None):
         self.dataset_dir = dataset_dir
-        self.landmarks_dir = landmarks_dir
+        self.with_landmarks = with_landmarks
         self.transform = transform
         self.images = self.get_images(self.dataset_dir)
+
+    def with_landmarks(self):
+        return self.with_landmarks
 
     def get_images(self, dataset_dir):
         all_images = list(files_iter(dataset_dir))
@@ -30,7 +28,6 @@ class MakeupDataset(Dataset):
     def __len__(self):
         return len(self.images)
 
-
     def __getitem__(self, index):
         # Get path of before and after images
         (image_name_before, image_name_after) = self.images[index]
@@ -42,8 +39,8 @@ class MakeupDataset(Dataset):
         image_after  = Image.open(path_after)
 
         landmarks = {}
-        landmarks["before"] = self.load_landmarks(image_name_before)
-        landmarks["after"]  = self.load_landmarks(image_name_after)
+        landmarks["before"] = self.load_landmarks(image_name_before),
+        landmarks["after"] = self.load_landmarks(image_name_after),
 
         # Create sample
         sample = {
@@ -61,16 +58,15 @@ class MakeupDataset(Dataset):
 
     def load_landmarks(self, image_name):
         
-        # Return if landmarks are not required
-        if self.landmarks_dir is None:
-            return None
-
-        # Get landmarks
-        landmarks_name = image_name.split(".")[0] + ".pickle"
-        landmarks_path = os.path.join(self.landmarks_dir, landmarks_name)
         landmarks = None
-        with open(landmarks_path, "rb") as f:
-            landmarks = pickle.load(f)
+
+        if self.with_landmarks:
+            # Get landmarks
+            landmarks_name = image_name.split(".")[0] + ".pickle"
+            landmarks_path = os.path.join(self.dataset_dir, "landmarks", landmarks_name)
+            if os.path.exists(landmarks_path):
+                with open(landmarks_path, "rb") as f:
+                    landmarks = pickle.load(f)
 
         return landmarks
 
@@ -93,9 +89,8 @@ class ToTensor:
 
         # Transform landmarks to tensors
         landmarks = {}
-        if self.landmarks_dir is not None:
-            landmarks["before"] = self.landmarks_to_tensor(img_size, sample["landmarks"]["before"])
-            landmarks["after"] = self.landmarks_to_tensor(img_size, sample["landmarks"]["after"])
+        landmarks["before"] = self.landmarks_to_tensor(img_size, sample["landmarks"]["before"])
+        landmarks["after"] = self.landmarks_to_tensor(img_size, sample["landmarks"]["after"])
 
         return {
             "before": img_before,
@@ -104,13 +99,17 @@ class ToTensor:
         }
 
     def landmarks_to_tensor(self, size, landmarks_dict):
-        landmarks_indices = []
-        for landmarks_part_indices in landmarks_dict:
-            landmarks_indices += landmarks_part_indices
+        
+        landmarks_tensor = None
 
-        landmarks = torch.zeros(size)
-        landmarks[list(zip(*landmarks_indices))] = 1
-        landmarks = landmarks / landmarks.norm()
+        if landmarks_dict is not None:
+            landmarks_indices = []
+            for landmarks_part_indices in landmarks_dict:
+                landmarks_indices += landmarks_part_indices
 
-        return landmarks
+            landmarks_tensor = torch.zeros(size)
+            landmarks_tensor[list(zip(*landmarks_indices))] = 1
+            landmarks_tensor = landmarks_tensor / landmarks_tensor.norm()
+
+        return landmarks_tensor
 

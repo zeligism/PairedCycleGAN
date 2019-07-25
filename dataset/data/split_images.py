@@ -74,12 +74,12 @@ def main(args):
 
 if __name__ == '__main__':
 
-    parser = argparse.ArgumentParser(description="Split makeup images into before and after.")
+    parser = argparse.ArgumentParser(description="split makeup images into before and after.")
     
     parser.add_argument('--source_dir', type=str, default=SOURCE_DIR,
-        help="Source directory of images to be split in half.")
+        help="source directory of images to be split in half.")
     parser.add_argument('--dest_dir', type=str, default=DEST_DIR,
-        help="Destination directory where split images will be saved.")
+        help="destination directory where split images will be saved.")
     
     args = parser.parse_args()
 

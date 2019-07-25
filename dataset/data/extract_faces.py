@@ -166,12 +166,12 @@ def main(args):
 
 if __name__ == '__main__':
 
-    parser = argparse.ArgumentParser(description="Extract faces and save them.")
+    parser = argparse.ArgumentParser(description="extract faces and save them.")
     
     parser.add_argument('--source_dir', type=str, default=SOURCE_DIR,
-        help="Source directory of images from which faces will be extracted.")
+        help="source directory of images from which faces will be extracted.")
     parser.add_argument('--dest_dir', type=str, default=DEST_DIR,
-        help="Destination directory where face images will be saved.")
+        help="destination directory where face images will be saved.")
     parser.add_argument("--with_landmarks", action="store_true",
         help="extract faces landmarks as well")
     
