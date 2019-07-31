@@ -4,7 +4,8 @@ import argparse
 import pickle
 from PIL import Image
 import face_recognition
-from utility import files_iter
+
+from .utility import files_iter
 
 
 # Get absolute path and force relative-to-file paths
