@@ -32,7 +32,9 @@ BATCH_SIZE = 4
 OPTIMIZER_NAME = "sgd"
 LEARNING_RATE = 1e-4
 MOMENTUM = 0.9
-CHECKPOINT = 1e4
+STATS_REPORT_INTERVAL = 50
+PROGRESS_CHECK_INTERVAL = 50
+NUM_WORKERS = 0
 
 ### END ###
 
@@ -77,7 +79,8 @@ def main(args):
 		"optimizer_name": args.optimizer_name,
 		"lr": args.learning_rate,
 		"momentum": args.momentum,
-		#"checkpoint": args.checkpoint,
+		"stats_report_interval": args.stats_report_interval,
+		"progress_check_interval": args.progress_check_interval,
 	}
 
 	# Start initializing dataset, model, and trainer
@@ -86,7 +89,7 @@ def main(args):
 	trainer = MakeupNetTrainer(model, dataset, **training_params)
 
 	# Train MakeupNet
-	trainer.start()
+	trainer.run(num_workers=args.num_workers, save_results=args.save_results)
 
 
 if __name__ == '__main__':
@@ -121,12 +124,19 @@ if __name__ == '__main__':
 	parser.add_argument('--optimizer_name', type=str.lower, default=OPTIMIZER_NAME,
 		choices=("sgd", "adam", "rmsprop"),
 		help="the name of the optimizer used for training (SGD, Adam, etc.)")
-	parser.add_argument('--learning_rate', type=float, default=LEARNING_RATE,
+	parser.add_argument('-lr', '--learning_rate', type=float, default=LEARNING_RATE,
 		help="the learning rate used in the optimizer.")
 	parser.add_argument('--momentum', type=float, default=MOMENTUM,
 		help="the momentum used in the optimizer, if applicable.")
-	parser.add_argument('--checkpoint', type=float, default=CHECKPOINT,
-		help="a report will be printed at every iteration that is divisible by the checkpoint index.")
+	parser.add_argument('--stats_report_interval', type=int, default=STATS_REPORT_INTERVAL,
+		help="a report will be")
+	parser.add_argument('--progress_check_interval', type=int, default=PROGRESS_CHECK_INTERVAL,
+		help="")
+
+	parser.add_argument('--num_workers', type=int, default=NUM_WORKERS,
+		help="save the results of the experiment.")
+	parser.add_argument('--save_results', action="store_true",
+		help="save the results of the experiment.")
 	
 	args = parser.parse_args()
 
