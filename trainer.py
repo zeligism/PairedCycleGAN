@@ -12,23 +12,29 @@ FAKE = 0
 class MakeupNetTrainer:
 	"""The trainer for MakeupNet."""
 
-	def __init__(self, model, dataset, num_gpu=0, num_epochs=5,
-		batch_size=4, optimizer_name="sgd", lr=1e-4, momentum=0.9):
+	def __init__(self, model, dataset,
+		load_model=False, model_path="model.pt",
+		num_gpu=0, num_epochs=5, batch_size=4,
+		optimizer_name="sgd", lr=1e-4, momentum=0.9):
 		"""
 		Initializes MakeupNetTrainer.
 
 		Args:
 			model: The makeup net.
 			dataset: The makeup dataset.
+			load_model: A flag indicating whether we should load the model or not.
+			model_path: The path to the file of the model.
 			num_gpu: Number of GPUs to use for training.
 			num_epochs: Number of epochs to train.
 			batch_size: Size of the batch. Must be > num_gpu.
 			optimizer_name: The name of the optimizer to use (e.g. "sgd").
-			lr: The learning rate.
+			lr: The learning rate of the optimizer.
 			momentum: The momentum of used in the optimizer, if applicable.
 		"""
 
-		# Initialize training parameters
+		# Initialize given parameters
+		self.load_model = load_model
+		self.model_path = model_path
 		self.num_gpu = num_gpu
 		self.num_epochs = num_epochs
 		self.batch_size = batch_size
@@ -36,17 +42,30 @@ class MakeupNetTrainer:
 		self.lr = lr
 		self.momentum = momentum
 
-		# Initialize device (cpu or gpu)
+		# Initialize device
 		if torch.cuda.is_available() and self.num_gpu > 0:
 			self.device = torch.device("cuda:0")
 		else:
 			self.device = torch.device("cpu")
 
-		# Initialize model on device
-		self.model = model.to(self.device)
-		# Parallelize model if we're using multiple gpus
+		# Initialize model, load if necessary
+		self.model = model
+		if load_model:
+			print("Loading model...")
+			self.model.load_state_dict(torch.load(self.model_path))
+		
+		# Move model to device and parallelize model if possible
+		# @TODO: Try DistributedDataParallel?
+		self.model = self.model.to(self.device)
 		if self.device.type == "cuda" and self.num_gpu > 1:
 			self.model = nn.DataParallel(self.model, list(range(self.num_gpu)))
+
+		# Initialize dataset and data loader
+		# @TODO: get shuffle and num_workers from outside?
+		self.dataset = dataset
+		self.len_dataset = len(dataset)
+		self.data_loader = torch.utils.data.DataLoader(dataset,
+			batch_size=self.batch_size, shuffle=True, num_workers=2)
 
 		# Initialize optimizers for generator and discriminator
 		self.D_optim = torch.optim.Adam(self.model.D.parameters(), lr=self.lr)
@@ -55,16 +74,23 @@ class MakeupNetTrainer:
 		# Define criterion
 		self.criterion = nn.BCELoss()
 
-		# Initialize data loader
-		self.data_loader = torch.utils.data.DataLoader(dataset,
-			batch_size=self.batch_size, shuffle=True, num_workers=2)
-		self.len_dataset = len(dataset)
-
 		# Initialize variables used for tracking loss and progress
 		self.D_losses = []
 		self.G_losses = []
 		self.fixed_sample_progress = []
 		self.fixed_noise = torch.randn(64, self.model.num_latent, 1, 1, device=self.device)
+
+
+	def start(self):
+		"""
+		Starts the trainer. Trainer will train the model then save it.
+		"""
+
+		try:
+			self.train()
+		finally:
+			print("Saving model...")
+			torch.save(self.model.state_dict(), self.model_path)
 
 
 	def train(self):
@@ -103,14 +129,16 @@ class MakeupNetTrainer:
 				if batch_index % 50 == 0:
 					self.check_progress_of_generator(self.model.G)
 
-
+		# Show stats and check progress at the end
+		self.report_training_stats(self.len_dataset, self.num_epochs, D_of_x, D_of_G_z1, D_of_G_z2)
+		self.check_progress_of_generator(self.model.G)
 		print("Finished training.")
-		self.check_progress_of_generator(self.model.G)  # check progress at the end
 
 		# Plot losses of D and G
 		self.plot_losses()
 
 		# Create an animation of the generator's progress
+		# @TODO: change video name
 		self.create_progress_animation(self.fixed_sample_progress, "test.mp4")
 
 

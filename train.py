@@ -1,6 +1,5 @@
 
 import os
-import pickle
 import argparse
 import torch
 import torchvision.transforms as transforms
@@ -26,6 +25,7 @@ NUM_LATENT = 100
 NUM_FEATURES = 64
 
 ### Training parameters ###
+MODEL_PATH = "model/makeupnet.pt"
 NUM_GPU = 1
 NUM_EPOCHS = 5
 BATCH_SIZE = 4
@@ -35,36 +35,6 @@ MOMENTUM = 0.9
 CHECKPOINT = 1e4
 
 ### END ###
-
-MODEL_FNAME = "model/makeupnet.pickle"
-
-
-def save_model(model, fname=MODEL_FNAME):
-	"""
-	Saves the given model.
-
-	Args:
-		model: The model/net to be saved.
-		fname: The name of the pickle file containing the model.
-	"""
-	print("Saving model...")
-	with open(fname, "wb") as f:
-		pickle.dump(model, f)
-
-
-def load_model(fname=MODEL_FNAME):
-	"""
-	Saves the given model.
-
-	Args:
-		fname: The name of the pickle file containing the model.
-
-	Returns:
-		The model loaded from `fname`.
-	"""
-	print("Loading model...")
-	with open(fname, "rb") as f:
-		return pickle.load(f)
 
 
 def main(args):
@@ -99,6 +69,8 @@ def main(args):
 
 	# Define training parameters
 	training_params = {
+		"load_model": args.load_model,
+		"model_path": args.model_path,
 		"num_gpu": args.num_gpu,
 		"num_epochs": args.num_epochs,
 		"batch_size": args.batch_size,
@@ -114,14 +86,7 @@ def main(args):
 	trainer = MakeupNetTrainer(model, dataset, **training_params)
 
 	# Train MakeupNet
-	try:
-		trainer.train()
-	except (Exception, KeyboardInterrupt):
-		# @TODO: wait?
-		save_model(model)
-		raise
-
-	save_model(model)
+	trainer.start()
 
 
 if __name__ == '__main__':
@@ -143,6 +108,10 @@ if __name__ == '__main__':
 	parser.add_argument('--num_features', type=int, default=NUM_FEATURES,
 		help="number of features on the layers of the discriminator (and the generator as well).")
 
+	parser.add_argument('--load_model', action="store_true",
+		help="load model from the given (or default) model file.")
+	parser.add_argument('--model_path', type=str, default=MODEL_PATH,
+		help="the path of the file where the model will be loaded and saved.")
 	parser.add_argument('--num_gpu', type=int, default=NUM_GPU,
 		help="number of GPUs to use, if any.")
 	parser.add_argument('--num_epochs', type=int, default=NUM_EPOCHS,
