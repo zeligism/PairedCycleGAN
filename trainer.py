@@ -1,12 +1,15 @@
 
+import os
+import datetime
 import torch
 import torch.nn as nn
 import torchvision.utils as vutils
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 
-REAL = 1
-FAKE = 0
+EPSILON = 1e-4
+REAL = 1.0 - EPSILON
+FAKE = 0.0 + EPSILON
 
 
 class MakeupNetTrainer:
@@ -15,7 +18,8 @@ class MakeupNetTrainer:
 	def __init__(self, model, dataset,
 		load_model=False, model_path="model.pt",
 		num_gpu=0, num_epochs=5, batch_size=4,
-		optimizer_name="sgd", lr=1e-4, momentum=0.9):
+		optimizer_name="sgd", lr=1e-4, momentum=0.9,
+		stats_report_interval=50, progress_check_interval=50):
 		"""
 		Initializes MakeupNetTrainer.
 
@@ -30,9 +34,13 @@ class MakeupNetTrainer:
 			optimizer_name: The name of the optimizer to use (e.g. "sgd").
 			lr: The learning rate of the optimizer.
 			momentum: The momentum of used in the optimizer, if applicable.
+			stats_report_interval: Report stats every `stats_report_interval` batch.
+			progress_check_interval: Check progress every `progress_check_interval` batch.
 		"""
 
 		# Initialize given parameters
+		self.model = model
+		self.dataset = dataset
 		self.load_model = load_model
 		self.model_path = model_path
 		self.num_gpu = num_gpu
@@ -41,6 +49,8 @@ class MakeupNetTrainer:
 		self.optimizer_name = optimizer_name
 		self.lr = lr
 		self.momentum = momentum
+		self.stats_report_interval = stats_report_interval
+		self.progress_check_interval = progress_check_interval
 
 		# Initialize device
 		if torch.cuda.is_available() and self.num_gpu > 0:
@@ -48,8 +58,7 @@ class MakeupNetTrainer:
 		else:
 			self.device = torch.device("cpu")
 
-		# Initialize model, load if necessary
-		self.model = model
+		# Load model if necessary
 		if load_model:
 			print("Loading model...")
 			self.model.load_state_dict(torch.load(self.model_path))
@@ -60,13 +69,6 @@ class MakeupNetTrainer:
 		if self.device.type == "cuda" and self.num_gpu > 1:
 			self.model = nn.DataParallel(self.model, list(range(self.num_gpu)))
 
-		# Initialize dataset and data loader
-		# @TODO: get shuffle and num_workers from outside?
-		self.dataset = dataset
-		self.len_dataset = len(dataset)
-		self.data_loader = torch.utils.data.DataLoader(dataset,
-			batch_size=self.batch_size, shuffle=True, num_workers=2)
-
 		# Initialize optimizers for generator and discriminator
 		self.D_optim = torch.optim.Adam(self.model.D.parameters(), lr=self.lr)
 		self.G_optim = torch.optim.Adam(self.model.G.parameters(), lr=self.lr)
@@ -75,33 +77,54 @@ class MakeupNetTrainer:
 		self.criterion = nn.BCELoss()
 
 		# Initialize variables used for tracking loss and progress
+		self.iters = 0
 		self.D_losses = []
 		self.G_losses = []
 		self.fixed_sample_progress = []
 		self.fixed_noise = torch.randn(64, self.model.num_latent, 1, 1, device=self.device)
 
 
-	def start(self):
+	def run(self, num_epochs=None, num_workers=0, save_results=False):
 		"""
-		Starts the trainer. Trainer will train the model then save it.
+		Runs the trainer. Trainer will train the model then save it.
+		Note that running trainer more than once will accumulate the results.
+
+		Args:
+			num_epochs: Run trainer for `num_epochs` epochs.
+			num_workers: Number of worker loading the dataset.
+			save_results: A flag indicating whether we should save the results this run.
 		"""
+
+		# This changes the number of epochs in trainer
+		if num_epochs is not None:
+			self.num_epochs = num_epochs
+
+		# Initialize data loader
+		data_loader = torch.utils.data.DataLoader(self.dataset,
+			batch_size=self.batch_size, shuffle=True, num_workers=num_workers)
 
 		try:
-			self.train()
+			# Try training the model
+			self.train(data_loader)
 		finally:
+			# Save model and report results
 			print("Saving model...")
 			torch.save(self.model.state_dict(), self.model_path)
+			self.report_results(save_results)
 
 
-	def train(self):
+	def train(self, data_loader):
 		"""
-		Trains `self.model` on `self.dataset`.
+		Trains `self.model` on data loaded from data loader.
+
+		Args:
+			data_loader: An iterator from which the data is sampled.
 		"""
 
 		print("Starting Training Loop...")
 		# For each epoch
 		for epoch in range(self.num_epochs):
-			for batch_index, sample in enumerate(self.data_loader):
+			for batch_index, sample in enumerate(data_loader):
 
 				# Sample real images
 				real = sample["before"].to(self.device)
@@ -121,25 +144,21 @@ class MakeupNetTrainer:
 				# Calculate index of data point
 				index = batch_index * batch_size
 
-				# Report training stats @TODO replace 50 with var (same below)
-				if batch_index % 50 == 0:
+				# Report training stats
+				if batch_index % self.stats_report_interval == 0:
 					self.report_training_stats(index, epoch, D_of_x, D_of_G_z1, D_of_G_z2)
 
 				# Check generator's progress by recording its output on a fixed input
-				if batch_index % 50 == 0:
+				if batch_index % self.progress_check_interval == 0:
 					self.check_progress_of_generator(self.model.G)
 
+				self.iters += 1
+				if self.iters == 2: break
+
 		# Show stats and check progress at the end
-		self.report_training_stats(self.len_dataset, self.num_epochs, D_of_x, D_of_G_z1, D_of_G_z2)
+		self.report_training_stats(len(self.dataset), self.num_epochs, D_of_x, D_of_G_z1, D_of_G_z2)
 		self.check_progress_of_generator(self.model.G)
 		print("Finished training.")
-
-		# Plot losses of D and G
-		self.plot_losses()
-
-		# Create an animation of the generator's progress
-		# @TODO: change video name
-		self.create_progress_animation(self.fixed_sample_progress, "test.mp4")
 
 
 	def D_step(self, real, fake):
@@ -262,7 +281,7 @@ class MakeupNetTrainer:
 			"epoch": epoch,
 			"num_epochs": self.num_epochs,
 			"index": index,
-			"len_dataset": self.len_dataset,
+			"len_dataset": len(self.dataset),
 			"D_loss": self.D_losses[-1],
 			"G_loss": self.G_losses[-1],
 			"D_of_x": D_of_x,
@@ -274,10 +293,40 @@ class MakeupNetTrainer:
 		print(report.format(**stats))
 
 
-	def plot_losses(self):
+	def report_results(self, save_results=False):
+		"""
+		Reports the result of the experiment.
+
+		Args:
+			save_results: Results will be saved if this was set to True.
+		"""
+		
+		if save_results:
+			# Get model directory and create experiment directory
+			model_dir = os.path.dirname(self.model_path)
+			experiment_dir = os.path.join(model_dir, self.get_experiment_name())
+			if not os.path.isdir(experiment_dir): os.mkdir(experiment_dir)
+
+			# Plot losses of D and G
+			plot_file = os.path.join(experiment_dir, "losses.png")
+			self.plot_losses(plot_file)
+
+			# Create an animation of the generator's progress
+			animation_file = os.path.join(experiment_dir, "progress.mp4")
+			self.create_progress_animation(animation_file)
+		else:
+			self.plot_losses()
+			self.create_progress_animation()
+
+
+	def plot_losses(self, filename=None):
 		"""
 		Plots the losses of the discriminator and the generator.
+
+		Args:
+			filename: The plot's filename. if None, plot won't be saved.
 		"""
+
 		plt.figure(figsize=(10,5))
 		plt.title("Generator and Discriminator Loss During Training")
 		plt.plot(self.D_losses, label="D")
@@ -285,17 +334,49 @@ class MakeupNetTrainer:
 		plt.xlabel("iterations")
 		plt.ylabel("loss")
 		plt.legend()
+		if filename is not None: plt.savefig(filename)
 		plt.show()
 
 
-	def create_progress_animation(self, progress_images, file_name):
+	def create_progress_animation(self, filename=None):
 		"""
 		Creates a video of the progress of the generator on a fixed latent vector.
+
+		Args:
+			filename: The animation's filename. if None, the animation won't be saved.
 		"""
+
 		fig = plt.figure(figsize=(8,8))
 		plt.axis("off")
-		ims = [[plt.imshow(img.permute(1,2,0), animated=True)] for img in progress_images]
+		ims = [[plt.imshow(img.permute(1,2,0), animated=True)]
+			for img in self.fixed_sample_progress]
 		ani = animation.ArtistAnimation(fig, ims, blit=True)
-		ani.save(file_name)
+		
+		if filename is not None: ani.save(filename)
 
+		# Uncomment the following line to show this on a notebook
+		# ani.to_jshtml()
+
+
+	def get_experiment_name(self, delimiter=", "):
+		"""
+		Get the name of trainer's training train...
+
+		Args:
+			delimiter: The delimiter between experiment's parameters. Pretty useless.
+		"""
+
+		experiment_details = {
+			"iters": self.iters,
+			"batch_size": self.batch_size,
+			"optim": self.optimizer_name,
+			"lr": self.lr,
+		}
+		if self.optimizer_name != "adam":
+			experiment_details["momentum"] = self.momentum
+
+		timestamp = "[{}]".format(datetime.datetime.now().strftime("%y%m%d-%H%M%S"))
+		experiment = delimiter.join("{}={}".format(k,v) for k,v in experiment_details.items())
+
+		return timestamp + " " + experiment
 
