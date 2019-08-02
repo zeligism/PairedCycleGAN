@@ -15,7 +15,7 @@ FAKE = 0.0 + EPSILON
 class MakeupNetTrainer:
 	"""The trainer for MakeupNet."""
 
-	def __init__(self, model, dataset,
+	def __init__(self, model, dataset, name="trainer",
 		load_model=False, model_path="model.pt",
 		num_gpu=0, num_epochs=5, batch_size=4,
 		optimizer_name="sgd", lr=1e-4, momentum=0.9,
@@ -26,6 +26,7 @@ class MakeupNetTrainer:
 		Args:
 			model: The makeup net.
 			dataset: The makeup dataset.
+			name: Name of this trainer.
 			load_model: A flag indicating whether we should load the model or not.
 			model_path: The path to the file of the model.
 			num_gpu: Number of GPUs to use for training.
@@ -41,6 +42,7 @@ class MakeupNetTrainer:
 		# Initialize given parameters
 		self.model = model
 		self.dataset = dataset
+		self.name = name
 		self.load_model = load_model
 		self.model_path = model_path
 		self.num_gpu = num_gpu
@@ -70,10 +72,14 @@ class MakeupNetTrainer:
 			self.model = nn.DataParallel(self.model, list(range(self.num_gpu)))
 
 		# Initialize optimizers for generator and discriminator
-		self.D_optim = torch.optim.Adam(self.model.D.parameters(), lr=self.lr)
-		self.G_optim = torch.optim.Adam(self.model.G.parameters(), lr=self.lr)
+		# @TODO
+		self.D_optim = self.init_optim(self.model.D.parameters())
+		self.G_optim = self.init_optim(self.model.G.parameters())
+		#self.D_optim = torch.optim.Adam(self.model.D.parameters(), lr=self.lr)
+		#self.G_optim = torch.optim.Adam(self.model.G.parameters(), lr=self.lr)
 
 		# Define criterion
+		# @TODO
 		self.criterion = nn.BCELoss()
 
 		# Initialize variables used for tracking loss and progress
@@ -111,6 +117,20 @@ class MakeupNetTrainer:
 			print("Saving model...")
 			torch.save(self.model.state_dict(), self.model_path)
 			self.report_results(save_results)
+
+
+	def init_optim(self, params):
+		"""
+		@TODO
+		"""
+		if self.optimizer_name == "adam":
+			optim = torch.optim.Adam(params, lr=self.lr)
+		elif self.optimizer_name == "sgd":
+			optim = torch.optim.SGD(params, lr=self.lr, momentum=self.momentum)
+		elif self.optimizer_name == "rmsprop":
+			optim = torch.optim.RMSprop(params, lr=self.lr, momentum=self.momentum)
+
+		return optim
 
 
 	def train(self, data_loader):
@@ -153,7 +173,6 @@ class MakeupNetTrainer:
 					self.check_progress_of_generator(self.model.G)
 
 				self.iters += 1
-				if self.iters == 2: break
 
 		# Show stats and check progress at the end
 		self.report_training_stats(len(self.dataset), self.num_epochs, D_of_x, D_of_G_z1, D_of_G_z2)
@@ -220,15 +239,15 @@ class MakeupNetTrainer:
 		# Zero gradients
 		self.G_optim.zero_grad()
 
-		# Note that we use real labels because we want the generator to
-		# output more realistic images
+		# Initialize fake labels
 		batch_size = fake.size()[0]
-		real_label = torch.full([batch_size], REAL, device=self.device)
+		fake_label = torch.full([batch_size], FAKE, device=self.device)
 
 		# Classify fake images and calculate generator's error
-		# (i.e. how far it is from real)
+		# Note that we use 1-label because we want to maximize this step.
+		# We can also back-propagate the -1*error, but this is more stable.
 		D_on_fake = self.model.D(fake).view(-1)
-		G_error = self.criterion(D_on_fake, real_label)
+		G_error = self.criterion(D_on_fake, 1 - fake_label)
 
 		# Calculate gradients and update
 		G_error.backward()
