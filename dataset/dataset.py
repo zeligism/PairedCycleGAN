@@ -100,20 +100,12 @@ class MakeupDataset(Dataset):
             The landmarks associated with `image_name`.
         """
 
-        landmarks = None
-
         # Get landmarks
-        landmarks_name = image_name.split(".")[0] + ".pickle"
+        landmarks_name = image_name.split(".")[0] + ".png"
         landmarks_path = os.path.join(self.dataset_dir, "landmarks", landmarks_name)
         if os.path.exists(landmarks_path):
-            with open(landmarks_path, "rb") as f:
-                landmarks = pickle.load(f)
-
-        return self.landmarks_to_pil_image(landmarks)
-
-
-    def landmarks_to_pil_image(self, landmarks):
-        """@TODO"""
-        return landmarks
+            return Image.open(landmarks_path)
+        else:
+            return Image.new("RGB", (0,0))
 
 

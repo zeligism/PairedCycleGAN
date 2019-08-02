@@ -5,7 +5,7 @@ import torch
 import torchvision.transforms as transforms
 
 from dataset.dataset import MakeupDataset
-from dataset.transforms import SampleTransform
+from dataset.transforms import MakeupSampleTransform
 from model.makeupnet import MakeupNet
 from trainer import MakeupNetTrainer
 
@@ -50,16 +50,16 @@ def main(args):
 	torch.manual_seed(args.random_seed or torch.initial_seed())
 
 	# Define data transformations
-	transform = transforms.Compose([
-		SampleTransform(transforms.Resize((64, 64))),
-		SampleTransform(transforms.ToTensor()),
-	])
+	transform_list = list(map(MakeupSampleTransform, [
+		transforms.Resize((64, 64)),
+		transforms.ToTensor(),  # necessary
+	]))
 
 	# Define dataset parameters
 	dataset_params = {
 		"dataset_dir": args.dataset_dir,
 		"with_landmarks": args.with_landmarks,
-		"transform": transform,
+		"transform": transforms.Compose(transform_list),
 	}
 
 	# Define model parameters
