@@ -3,7 +3,7 @@ import os
 import argparse
 from PIL import Image
 
-from .utility import files_iter
+from utility import files_iter
 
 
 # Get absolute path of this file and force relative-to-file paths
