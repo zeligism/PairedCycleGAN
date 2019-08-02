@@ -3,6 +3,7 @@ import os
 import datetime
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torchvision.utils as vutils
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
@@ -72,15 +73,8 @@ class MakeupNetTrainer:
 			self.model = nn.DataParallel(self.model, list(range(self.num_gpu)))
 
 		# Initialize optimizers for generator and discriminator
-		# @TODO
 		self.D_optim = self.init_optim(self.model.D.parameters())
 		self.G_optim = self.init_optim(self.model.G.parameters())
-		#self.D_optim = torch.optim.Adam(self.model.D.parameters(), lr=self.lr)
-		#self.G_optim = torch.optim.Adam(self.model.G.parameters(), lr=self.lr)
-
-		# Define criterion
-		# @TODO
-		self.criterion = nn.BCELoss()
 
 		# Initialize variables used for tracking loss and progress
 		self.iters = 0
@@ -203,11 +197,11 @@ class MakeupNetTrainer:
 
 		# Classify real images and calculate error
 		D_on_real = self.model.D(real).view(-1)
-		D_error_on_real = self.criterion(D_on_real, real_label)
+		D_error_on_real = F.binary_cross_entropy(D_on_real, real_label)
 
 		# Classify fake images and calculate error (don't pass gradients to G)
 		D_on_fake = self.model.D(fake.detach()).view(-1)
-		D_error_on_fake = self.criterion(D_on_fake, fake_label)
+		D_error_on_fake = F.binary_cross_entropy(D_on_fake, fake_label)
 
 		# Calculate gradients from the error on real and fake images
 		D_error = D_error_on_real + D_error_on_fake
@@ -247,7 +241,7 @@ class MakeupNetTrainer:
 		# Note that we use 1-label because we want to maximize this step.
 		# We can also back-propagate the -1*error, but this is more stable.
 		D_on_fake = self.model.D(fake).view(-1)
-		G_error = self.criterion(D_on_fake, 1 - fake_label)
+		G_error = F.binary_cross_entropy(D_on_fake, 1 - fake_label)
 
 		# Calculate gradients and update
 		G_error.backward()
