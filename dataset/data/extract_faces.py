@@ -108,7 +108,8 @@ def clean_faces(faces_dir):
         if not os.path.exists(os.path.join(faces_dir, other_file)):
             # Remove this file if the other does not exist
             os.remove(os.path.join(faces_dir, file_name))
-            print("Removed {}".format(file_name))
+            print("Removed face: {}".format(file_name))
+
 
 #################### END FACES ####################
 
@@ -188,7 +189,7 @@ def clean_landmarks(faces_dir, landmarks_dir):
         landmarks_name = landmarks.split(".")[0]
         if landmarks_name not in faces_set:
             os.remove(os.path.join(landmarks_dir, landmarks))
-            print("Removed {}".format(landmarks))
+            print("Removed landmarks {}".format(landmarks))
 
 
 #################### END LANDMARKS ####################
