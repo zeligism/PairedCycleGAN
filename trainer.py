@@ -90,6 +90,20 @@ class MakeupNetTrainer:
 		self.fixed_noise = torch.randn(64, self.model.num_latent, 1, 1, device=self.device)
 
 
+	def init_optim(self, params):
+		"""
+		@TODO
+		"""
+		if self.optimizer_name == "adam":
+			optim = torch.optim.Adam(params, lr=self.lr)
+		elif self.optimizer_name == "sgd":
+			optim = torch.optim.SGD(params, lr=self.lr, momentum=self.momentum)
+		elif self.optimizer_name == "rmsprop":
+			optim = torch.optim.RMSprop(params, lr=self.lr, momentum=self.momentum)
+
+		return optim
+
+
 	def run(self, num_epochs=None, num_workers=0, save_results=False):
 		"""
 		Runs the trainer. Trainer will train the model then save it.
@@ -117,20 +131,6 @@ class MakeupNetTrainer:
 			print("Saving model...")
 			torch.save(self.model.state_dict(), self.model_path)
 			self.report_results(save_results)
-
-
-	def init_optim(self, params):
-		"""
-		@TODO
-		"""
-		if self.optimizer_name == "adam":
-			optim = torch.optim.Adam(params, lr=self.lr)
-		elif self.optimizer_name == "sgd":
-			optim = torch.optim.SGD(params, lr=self.lr, momentum=self.momentum)
-		elif self.optimizer_name == "rmsprop":
-			optim = torch.optim.RMSprop(params, lr=self.lr, momentum=self.momentum)
-
-		return optim
 
 
 	def train(self, data_loader):

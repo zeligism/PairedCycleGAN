@@ -103,6 +103,7 @@ class MakeupDataset(Dataset):
         # Get landmarks
         landmarks_name = image_name.split(".")[0] + ".png"
         landmarks_path = os.path.join(self.dataset_dir, "landmarks", landmarks_name)
+
         if os.path.exists(landmarks_path):
             return Image.open(landmarks_path)
         else:
