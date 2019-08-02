@@ -7,7 +7,8 @@ import torch.nn.functional as F
 class MakeupNet(nn.Module):
 	"""The main module of the MakeupNet"""
 
-	def __init__(self, num_channels=3, num_features=64, num_latent=100):
+	def __init__(self, name="makeupnet",
+		num_channels=3, num_features=64, num_latent=100, with_landmarks=False):
 		"""
 		Initializes MakeupNet.
 
@@ -20,9 +21,10 @@ class MakeupNet(nn.Module):
 		self.num_channels = num_channels
 		self.num_features = num_features
 		self.num_latent = num_latent
+		self.with_landmarks = with_landmarks
 
-		self.G = Generator(num_channels, num_features, num_latent)
-		self.D = Discriminator(num_channels, num_features, num_latent)
+		self.G = Generator(num_channels, num_features, num_latent, with_landmarks)
+		self.D = Discriminator(num_channels, num_features, num_latent, with_landmarks)
 		self.weights_init()
 
 
@@ -49,7 +51,7 @@ class MakeupNet(nn.Module):
 class Generator(nn.Module):
 	"""The generator of the MakeupNet"""
 
-	def __init__(self, num_channels, num_features, num_latent):
+	def __init__(self, num_channels, num_features, num_latent, with_landmarks=False):
 		super().__init__()
 		self.main = nn.Sequential(
 			# input is Z, going into a convolution
@@ -81,7 +83,7 @@ class Generator(nn.Module):
 class Discriminator(nn.Module):
 	"""The discriminator of the MakeupNet"""
 
-	def __init__(self, num_channels, num_features, num_latent):
+	def __init__(self, num_channels, num_features, num_latent, with_landmarks=False):
 		super().__init__()
 		self.main = nn.Sequential(
 			# input is (nc) x 64 x 64

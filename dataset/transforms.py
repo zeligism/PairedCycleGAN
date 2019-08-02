@@ -1,6 +1,4 @@
 
-from torchvision.transforms.functional import to_tensor, resize
-
 
 class MakeupSampleTransform:
     """A wrapper around torch transforms for

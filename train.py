@@ -67,6 +67,7 @@ def main(args):
 		"num_channels": args.num_channels,
 		"num_latent": args.num_latent,
 		"num_features": args.num_features,
+		"with_landmarks": args.with_landmarks,
 	}
 
 	# Define training parameters
