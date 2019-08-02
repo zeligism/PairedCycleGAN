@@ -1,11 +1,11 @@
 
 import os
 import argparse
-import pickle
-from PIL import Image
+import numpy as np
 import face_recognition
+from PIL import Image, ImageDraw
 
-from .utility import files_iter
+from utility import files_iter
 
 
 # Get absolute path and force relative-to-file paths
@@ -15,6 +15,8 @@ FILE_DIR = os.path.dirname(os.path.realpath(__file__))
 SOURCE_DIR = os.path.join(FILE_DIR, "processing", "splits")
 DEST_DIR = os.path.join(FILE_DIR, "processing", "faces")
 
+
+#################### FACES ####################
 
 def extract_faces(source_dir, faces_dir, with_landmarks=True):
     """
@@ -33,7 +35,6 @@ def extract_faces(source_dir, faces_dir, with_landmarks=True):
     if with_landmarks and not os.path.isdir(landmarks_dir): os.mkdir(landmarks_dir)
 
     for file_name in files_iter(source_dir):
-        break
         # Try to extract face from file (image)
         try:
             print("Extracting face from {}... ".format(file_name), end="")
@@ -88,40 +89,6 @@ def extract_face(file_name, source_dir, dest_dir):
     return face_image_name
 
 
-def extract_landmarks(file_name, source_dir, dest_dir):
-    """
-    Extract the first detected face from the image in `file_name` and save it.
-
-    Args:
-        file_name: The path to the face image
-        source_dir: Directory of images.
-        dest_dir: Directory where processed images will be saved.
-
-    Returns:
-        The name of the landmarks file.
-    """
-
-    landmarks_name = file_name.split(".")[0] + ".pickle"
-
-    # Check if landmarks already exists
-    landmarks_path = os.path.join(dest_dir, landmarks_name)
-    if not os.path.exists(landmarks_path):
-        # load image and extract landmarks from it
-        source_path = os.path.join(source_dir, file_name)
-        image = face_recognition.load_image_file(source_path)
-        face_landmarks = face_recognition.face_landmarks(image)
-
-        print("Extracted {} face landmarks... ".format(len(face_landmarks)), end="")
-        if len(face_landmarks) == 0:
-            raise Exception(" Couldn't extract any landmarks.")
-
-        # Save landmarks
-        with open(landmarks_path, "wb") as f:
-            pickle.dump(face_landmarks[0], f)
-
-    return landmarks_name
-
-
 def clean_faces(faces_dir):
     """
     Clean incomplete face pairs (either before or after image is missing)
@@ -143,6 +110,69 @@ def clean_faces(faces_dir):
             os.remove(os.path.join(faces_dir, file_name))
             print("Removed {}".format(file_name))
 
+#################### END FACES ####################
+
+
+#################### LANDMARKS ####################
+
+def extract_landmarks(file_name, source_dir, dest_dir):
+    """
+    Extract the first detected face from the image in `file_name` and save it.
+
+    Args:
+        file_name: The path to the face image
+        source_dir: Directory of images.
+        dest_dir: Directory where processed images will be saved.
+
+    Returns:
+        The name of the landmarks file.
+    """
+
+    landmarks_name = file_name.split(".")[0] + ".png"
+
+    # Check if landmarks already exists
+    landmarks_path = os.path.join(dest_dir, landmarks_name)
+    if not os.path.exists(landmarks_path):
+
+        # load image and extract landmarks from it
+        face_image = Image.open(os.path.join(source_dir, file_name))
+        face_landmarks = face_recognition.face_landmarks(np.array(face_image))
+
+        print("Extracted {} face landmarks... ".format(len(face_landmarks)), end="")
+        if len(face_landmarks) == 0:
+            raise Exception(" Couldn't extract any landmarks.")
+
+        # Draw landmarks on an empty PIL image
+        landmarks_image = Image.new("RGB", face_image.size)
+        draw_landmarks(landmarks_image, face_landmarks[0])
+
+        # Save landmarks
+        landmarks_image.save(os.path.join(dest_dir, landmarks_name))
+
+    return landmarks_name
+
+
+def draw_landmarks(landmarks_image, landmarks, fill=None, width=3):
+    """
+    Draws the landmarks on an empty image.
+
+    Args:
+        landmarks_image: PIL image on which we will draw the landmarks.
+        landmarks: A dict of the landmarks coordinates, as in {"part": [coords, ...]}.
+        fill: Color of the lines.
+        width: Width of the lines.
+    """
+
+    d = ImageDraw.Draw(landmarks_image)
+
+    for part, xy in landmarks.items():
+        d.line(xy, fill=fill, width=3)
+
+        # For the eyes, close the loop (sounds a little poetic, i know)
+        if part == "right_eye" or part == "left_eye":
+            closing_line = [xy[-1], xy[0]]
+            d.line(closing_line, fill=fill, width=3)
+
 
 def clean_landmarks(faces_dir, landmarks_dir):
     """
@@ -159,6 +189,9 @@ def clean_landmarks(faces_dir, landmarks_dir):
         if landmarks_name not in faces_set:
             os.remove(os.path.join(landmarks_dir, landmarks))
             print("Removed {}".format(landmarks))
+
+
+#################### END LANDMARKS ####################
 
 
 def main(args):
