@@ -16,11 +16,22 @@ FAKE = 0.0 + EPSILON
 class MakeupNetTrainer:
 	"""The trainer for MakeupNet."""
 
-	def __init__(self, model, dataset, name="trainer",
-		load_model=False, model_path="model.pt",
-		num_gpu=0, num_epochs=5, batch_size=4,
-		optimizer_name="sgd", lr=1e-4, momentum=0.9,
-		stats_report_interval=50, progress_check_interval=50):
+	def __init__(self, model, dataset,
+		name="trainer",
+		results_dir="results/",
+		load_model_path=None,
+		num_gpu=0,
+		num_workers=0,
+		batch_size=4,
+		optimizer_name="sgd",
+		lr=1e-4,
+		momentum=0.9,
+		betas=(0.9, 0.999),
+		gan_type="gan",
+		clip=0.01,
+		gp_coeff=10.0,
+		stats_report_interval=50,
+		progress_check_interval=50):
 		"""
 		Initializes MakeupNetTrainer.
 
@@ -28,14 +39,18 @@ class MakeupNetTrainer:
 			model: The makeup net.
 			dataset: The makeup dataset.
 			name: Name of this trainer.
-			load_model: A flag indicating whether we should load the model or not.
-			model_path: The path to the file of the model.
+			results_dir: Directory in which results will be saved for each run.
+			load_model_path: Path to the model that will be loaded, if any.
 			num_gpu: Number of GPUs to use for training.
-			num_epochs: Number of epochs to train.
+			num_workers: Number of workers sampling from the dataset.
 			batch_size: Size of the batch. Must be > num_gpu.
 			optimizer_name: The name of the optimizer to use (e.g. "sgd").
 			lr: The learning rate of the optimizer.
 			momentum: The momentum of used in the optimizer, if applicable.
+			betas: The betas used in the Adam optimizer.
+			gan_type: Type of GAN to train. Choices = {gan, wgan, wgan-gp}
+			clip: Set to None if you don't want to clip discriminator's weight after each update.
+			gp_coeff: A coefficient for the gradient penalty (gp) of the discriminator.
 			stats_report_interval: Report stats every `stats_report_interval` batch.
 			progress_check_interval: Check progress every `progress_check_interval` batch.
 		"""
@@ -43,17 +58,27 @@ class MakeupNetTrainer:
 		# Initialize given parameters
 		self.model = model
 		self.dataset = dataset
+
 		self.name = name
-		self.load_model = load_model
-		self.model_path = model_path
+		self.results_dir = results_dir
+		self.load_model_path = load_model_path
+		
 		self.num_gpu = num_gpu
-		self.num_epochs = num_epochs
+		self.num_workers = num_workers
 		self.batch_size = batch_size
+
 		self.optimizer_name = optimizer_name
 		self.lr = lr
 		self.momentum = momentum
+		self.betas = betas
+
+		self.gan_type = gan_type
+		self.clip = clip
+		self.gp_coeff = gp_coeff
+
 		self.stats_report_interval = stats_report_interval
 		self.progress_check_interval = progress_check_interval
+
 
 		# Initialize device
 		if torch.cuda.is_available() and self.num_gpu > 0:
@@ -62,9 +87,9 @@ class MakeupNetTrainer:
 			self.device = torch.device("cpu")
 
 		# Load model if necessary
-		if load_model:
+		if self.load_model_path is not None:
 			print("Loading model...")
-			self.model.load_state_dict(torch.load(self.model_path))
+			self.model.load_state_dict(torch.load(self.load_model_path))
 		
 		# Move model to device and parallelize model if possible
 		# @TODO: Try DistributedDataParallel?
@@ -76,8 +101,10 @@ class MakeupNetTrainer:
 		self.D_optim = self.init_optim(self.model.D.parameters())
 		self.G_optim = self.init_optim(self.model.G.parameters())
 
+		self.num_epochs = 0  # set in in self.run()
+		self.iters = 0  # number of samples processed so far
+
 		# Initialize variables used for tracking loss and progress
-		self.iters = 0
 		self.D_losses = []
 		self.G_losses = []
 		self.fixed_sample_progress = []
@@ -86,59 +113,60 @@ class MakeupNetTrainer:
 
 	def init_optim(self, params):
 		"""
-		@TODO
+		Initializes the optimizer.
+
+		Args:
+			params: The parameters this optimizer will optimize.
+
+		Returns:
+			The optimizer (torch.optim). The default is SGD.
 		"""
+
 		if self.optimizer_name == "adam":
-			optim = torch.optim.Adam(params, lr=self.lr)
-		elif self.optimizer_name == "sgd":
-			optim = torch.optim.SGD(params, lr=self.lr, momentum=self.momentum)
+			optim = torch.optim.Adam(params, lr=self.lr, betas=self.betas)
 		elif self.optimizer_name == "rmsprop":
 			optim = torch.optim.RMSprop(params, lr=self.lr, momentum=self.momentum)
+		elif self.optimizer_name == "sgd":
+			optim = torch.optim.SGD(params, lr=self.lr, momentum=self.momentum)
+		else:
+			raise ValueError("Optimizer of the name '{}' not recognized".format(self.optimizer_name))
 
 		return optim
 
 
-	def run(self, gan_type="gan", num_epochs=None, save_results=False, num_workers=0):
+	def run(self, num_epochs, save_results=False):
 		"""
 		Runs the trainer. Trainer will train the model then save it.
 		Note that running trainer more than once will accumulate the results.
-		@TODO: remove self.num_epochs (or set to None initially?).
 
 		Args:
 			num_epochs: Run trainer for `num_epochs` epochs.
-			num_workers: Number of worker loading the dataset.
 			save_results: A flag indicating whether we should save the results this run.
 		"""
 
-		# This changes the number of epochs in trainer
-		if num_epochs is not None:
-			self.num_epochs = num_epochs
+		self.num_epochs = num_epochs
 
 		# Initialize data loader
 		data_loader = torch.utils.data.DataLoader(self.dataset,
-			batch_size=self.batch_size, shuffle=True, num_workers=num_workers)
+			batch_size=self.batch_size, shuffle=True, num_workers=self.num_workers)
 
 		try:
 			# Try training the model
-			self.train(data_loader, gan_type)
+			self.train(data_loader)
 		finally:
-			# Save model and report results
-			print("Saving model...")
-			torch.save(self.model.state_dict(), self.model_path)
-			self.report_results(save_results)
+			# Stop trainer, save and report results
+			self.stop(save_results)
 
 
 	#################### Training Methods ####################
 
-	def train(self, data_loader, gan_type="wgan-gp"):
+	def train(self, data_loader):
 		"""
 		Trains `self.model` on data loaded from data loader.
 		@TODO: improve this function, try to reduce code, refactor.
 
 		Args:
 			data_loader: An iterator from which the data is sampled.
-			gan_type: Train based on the gan type.
-                      Choices = ["gan", "wgan", "wgan-gp"]
 		"""
 
 		print("Starting Training Loop...")
@@ -150,28 +178,27 @@ class MakeupNetTrainer:
 				real = sample["before"].to(self.device)
 
 				# Calculate latent vector size
-				batch_size = real.size()[0]
-				latent_size = torch.Size([batch_size, self.model.num_latent, 1, 1])
+				this_batch_size = real.size()[0]
+				latent_size = torch.Size([this_batch_size, self.model.num_latent, 1, 1])
 
 				# Sample fake images from a random latent vector
 				latent = torch.randn(latent_size, device=self.device)
 				fake = self.model.G(latent)
 
 				# Perform training step on discriminator and generator
-				if gan_type == "gan":
+				if self.gan_type == "gan":
 					D_of_x, D_of_G_z1 = self.D_step(real, fake)
 					D_of_G_z2 = self.G_step(fake)
 				else:
-					# @TODO parameters default?
-					if gan_type == "wgan":
-						D_of_x, D_of_G_z1 = self.D_step_wasserstein(real, fake, clip=0.01)
-					else:
-						D_of_x, D_of_G_z1 = self.D_step_wasserstein(real, fake, gp_coeff=10.0)
+					if self.gan_type == "wgan":
+						D_of_x, D_of_G_z1 = self.D_step_wasserstein(real, fake, clip=self.clip)
+					elif self.gan_type == "wgan-gp":
+						D_of_x, D_of_G_z1 = self.D_step_wasserstein(real, fake, gp_coeff=self.gp_coeff)
 					
 					D_of_G_z2 = self.G_step_wasserstein(fake)
 
 				# Calculate index of data point
-				index = batch_index * batch_size
+				index = batch_index * this_batch_size
 
 				# Report training stats
 				if batch_index % self.stats_report_interval == 0:
@@ -181,7 +208,7 @@ class MakeupNetTrainer:
 				if batch_index % self.progress_check_interval == 0:
 					self.check_progress_of_generator(self.model.G)
 
-				self.iters += 1
+				self.iters += this_batch_size
 
 		# Show stats and check progress at the end
 		self.report_training_stats(len(self.dataset), self.num_epochs, D_of_x, D_of_G_z1, D_of_G_z2)
@@ -211,11 +238,11 @@ class MakeupNetTrainer:
 		fake_label = torch.full([batch_size], FAKE, device=self.device)
 
 		# Classify real images and calculate error
-		D_on_real = self.model.D(real).view(-1)
+		D_on_real = self.model.D(real)
 		D_error_on_real = F.binary_cross_entropy(D_on_real, real_label)
 
 		# Classify fake images and calculate error (don't pass gradients to G)
-		D_on_fake = self.model.D(fake.detach()).view(-1)
+		D_on_fake = self.model.D(fake.detach())
 		D_error_on_fake = F.binary_cross_entropy(D_on_fake, fake_label)
 
 		# Calculate gradients from the errors and update
@@ -232,7 +259,7 @@ class MakeupNetTrainer:
 		)
 
 
-	def D_step_wasserstein(self, real, fake, clip=0, gp_coeff=0):
+	def D_step_wasserstein(self, real, fake, clip=None, gp_coeff=None):
 		"""
 		Trains the discriminator, wasserstein-style.
 
@@ -241,7 +268,6 @@ class MakeupNetTrainer:
 			fake: The fake image generated by the generator.
 			clip: Clipping/clamping range such that D's params are in [-clip, clip]
 			gp_coeff: A coefficient for the gradient penalty (gp).
-			          Used in WGAN-GP only (gan_type == "wgan-gp").
 
 		Returns:
 			A tuple containing the mean classification of the discriminator on
@@ -252,28 +278,32 @@ class MakeupNetTrainer:
 		self.D_optim.zero_grad()
 
 		# Classify real images
-		D_on_real = self.model.D(real).view(-1)
+		D_on_real = self.model.D(real)
 
 		# Classify fake images
-		D_on_fake = self.model.D(fake.detach()).view(-1)
+		D_on_fake = self.model.D(fake.detach())
 
 		# Calculate gradient penalty (only used in WGAN-GP)
 		grad_penalty = 0
-		if gp_coeff > 0:
+		if gp_coeff is not None:
 			interpolated = fake + torch.rand() * (real - fake)
-			D_on_inter = self.model.D(interpolated).view(-1)
+			D_on_inter = self.model.D(interpolated)
 			D_grad = torch.autograd.grad(D_on_inter, interpolated, retain_graph=True)
 			grad_penalty = gp_coeff * (D_grad.norm() - 1).pow(2)
 
 
+		# @XXX: this is something weird that I noticed in the order
+		# of the terms in the loss equations in WGAN's and WGAN-GP's papers.
+		# Need to investigate this further.
+		swap = -1 if clip is None else 1
+
 		# Minimize D(x) - D(x_g), where x_g ~ G(z)
-		swap = 1 if gp_coeff == 0 else 0  # @XXX
 		D_error = swap * (D_on_real - D_on_fake) + grad_penalty
 		D_error.backward()
 		self.D_optim.step()
 		
 		# Clip gradients to ensure 1-Lipschitzness if given a parameter `c`
-		if clip > 0:
+		if clip is not None:
 			[p.clamp_(-clip, clip) for p in self.model.D.parameters()]
 
 		# Record loss
@@ -306,7 +336,7 @@ class MakeupNetTrainer:
 		# Classify fake images and calculate generator's error
 		# Note that we use 1-label because we want to maximize this step.
 		# We can also back-propagate the -1*error, but this is more stable.
-		D_on_fake = self.model.D(fake).view(-1)
+		D_on_fake = self.model.D(fake)
 		G_error = F.binary_cross_entropy(D_on_fake, 1 - fake_label)
 
 		# Calculate gradients and update
@@ -334,7 +364,7 @@ class MakeupNetTrainer:
 		self.G_optim.zero_grad()
 
 		# Classify fake images
-		D_on_fake = self.model.D(fake).view(-1)
+		D_on_fake = self.model.D(fake)
 
 		# Calculate gradients and maximize D(G(z))
 		G_error = -1 * D_on_fake
@@ -348,7 +378,7 @@ class MakeupNetTrainer:
 
 
 
-	#################### Reporting Methods ####################
+	#################### Reporting and Tracking Methods ####################
 
 	def check_progress_of_generator(self, generator):
 		"""
@@ -402,7 +432,7 @@ class MakeupNetTrainer:
 		print(report.format(**stats))
 
 
-	def report_results(self, save_results=False):
+	def stop(self, save_results=False):
 		"""
 		Reports the result of the experiment.
 
@@ -410,22 +440,29 @@ class MakeupNetTrainer:
 			save_results: Results will be saved if this was set to True.
 		"""
 		
-		if save_results:
-			# Get model directory and create experiment directory
-			model_dir = os.path.dirname(self.model_path)
-			experiment_dir = os.path.join(model_dir, self.get_experiment_name())
-			if not os.path.isdir(experiment_dir): os.mkdir(experiment_dir)
+		# Create results directory if it hasn't been created yet
+		if not os.path.isdir(self.results_dir): os.mkdir(self.results_dir)
 
+		# Create experiment directory in the model's directory
+		experiment_dir = os.path.join(self.results_dir, self.get_experiment_name())
+		if not os.path.isdir(experiment_dir): os.mkdir(experiment_dir)
+
+		# always save model
+		print("Saving model...")
+		trained_model_path = os.path.join(experiment_dir, "model.pt")
+		torch.save(self.model.state_dict(), trained_model_path)
+
+		# Report results, and save if necessary
+		if not save_results:
+			self.plot_losses()
+		else:
 			# Plot losses of D and G
 			plot_file = os.path.join(experiment_dir, "losses.png")
-			self.plot_losses(plot_file)
+			self.plot_losses(plot_file)	
 
 			# Create an animation of the generator's progress
 			animation_file = os.path.join(experiment_dir, "progress.mp4")
 			self.create_progress_animation(animation_file)
-		else:
-			self.plot_losses()
-			self.create_progress_animation()
 
 
 	def plot_losses(self, filename=None):
@@ -447,7 +484,7 @@ class MakeupNetTrainer:
 		plt.show()
 
 
-	def create_progress_animation(self, filename=None):
+	def create_progress_animation(self, filename):
 		"""
 		Creates a video of the progress of the generator on a fixed latent vector.
 
@@ -461,7 +498,7 @@ class MakeupNetTrainer:
 			for img in self.fixed_sample_progress]
 		ani = animation.ArtistAnimation(fig, ims, blit=True)
 		
-		if filename is not None: ani.save(filename)
+		ani.save(filename)
 
 		# Uncomment the following line to show this on a notebook
 		# ani.to_jshtml()
@@ -476,12 +513,15 @@ class MakeupNetTrainer:
 		"""
 
 		experiment_details = {
+			"name": self.name,
 			"iters": self.iters,
 			"batch_size": self.batch_size,
 			"optim": self.optimizer_name,
 			"lr": self.lr,
 		}
-		if self.optimizer_name != "adam":
+		if self.optimizer_name == "adam":
+			experiment_details["betas"] = self.betas
+		else:
 			experiment_details["momentum"] = self.momentum
 
 		timestamp = "[{}]".format(datetime.datetime.now().strftime("%y%m%d-%H%M%S"))
