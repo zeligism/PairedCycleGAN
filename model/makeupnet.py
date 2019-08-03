@@ -105,9 +105,8 @@ class Discriminator(nn.Module):
 			nn.Conv2d(num_features * 8, 1, 4, 1, 0, bias=False),
 			nn.Sigmoid()
 		)
-		# @TODO consider adding .view(-1)
 
 	def forward(self, inputs):
-		return self.main(inputs)
+		return self.main(inputs).view(-1)
 
 
