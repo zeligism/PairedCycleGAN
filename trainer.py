@@ -185,16 +185,15 @@ class MakeupNetTrainer:
 				latent = torch.randn(latent_size, device=self.device)
 				fake = self.model.G(latent)
 
-				# Perform training step on discriminator and generator
+				# Train discriminator and generator
 				if self.gan_type == "gan":
 					D_of_x, D_of_G_z1 = self.D_step(real, fake)
 					D_of_G_z2 = self.G_step(fake)
-				else:
-					if self.gan_type == "wgan":
-						D_of_x, D_of_G_z1 = self.D_step_wasserstein(real, fake, clip=self.clip)
-					elif self.gan_type == "wgan-gp":
-						D_of_x, D_of_G_z1 = self.D_step_wasserstein(real, fake, gp_coeff=self.gp_coeff)
-					
+				elif self.gan_type == "wgan":
+					D_of_x, D_of_G_z1 = self.D_step_wasserstein(real, fake, clip=self.clip)
+					D_of_G_z2 = self.G_step_wasserstein(fake)
+				elif self.gan_type == "wgan-gp":
+					D_of_x, D_of_G_z1 = self.D_step_wasserstein(real, fake, gp_coeff=self.gp_coeff)
 					D_of_G_z2 = self.G_step_wasserstein(fake)
 
 				# Calculate index of data point
