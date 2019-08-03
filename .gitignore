@@ -116,3 +116,7 @@ image_urls.csv
 # Dataset
 dataset/data/*/
 
+# Results
+results/
+
+
