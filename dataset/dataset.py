@@ -18,6 +18,10 @@ class MakeupDataset(Dataset):
             with_landmarks: A flag indicating whether landmarks should be used or not.
             transform: The transform used on the data.
         """
+
+        if not os.path.isdir(dataset_dir):
+            raise FileNotFoundError(f"Dataset directory '{dataset_dir}' does not exist.")
+
         self.dataset_dir = dataset_dir
         self.with_landmarks = with_landmarks
         self.transform = transform
