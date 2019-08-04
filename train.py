@@ -31,7 +31,7 @@ RESULTS_DIR = "results/"
 LOAD_MODEL_PATH = "model/makeupnet.pt"
 
 NUM_GPU = 1
-NUM_WORKERS = 0
+NUM_WORKERS = 2
 BATCH_SIZE = 4
 
 OPTIMIZER_NAME = "sgd"
@@ -40,12 +40,12 @@ MOMENTUM = 0.9
 BETAS = (0.9, 0.999)
 
 GAN_TYPE = "gan"
-D_ITER = 5
+D_ITERS = 5
 CLAMP = (-0.01, 0.01)
 GRADIENT_PENALTY_COEFF = 10.
 
 STATS_REPORT_INTERVAL = 50
-PROGRESS_CHECK_INTERVAL = 50
+PROGRESS_CHECK_INTERVAL = 200
 
 NUM_EPOCHS = 5
 
@@ -97,6 +97,7 @@ def main(args):
 		"momentum": args.momentum,
 		"betas": tuple(args.betas),
 		"gan_type": args.gan_type,
+		"D_iters": args.D_iters,
 		"clamp": tuple(args.clamp),
 		"gp_coeff": args.gp_coeff,
 		"stats_report_interval": args.stats_interval,
@@ -162,7 +163,7 @@ if __name__ == "__main__":
 	parser.add_argument("--gan_type", type=str.lower, default=GAN_TYPE,
 		choices=("gan", "wgan", "wgan-gp"),
 		help="type of gan among GAN (default), WGAN (Wasserstein GAN), and WGAN-GP (WGAN with gradient penalty).")
-	parser.add_argument("--D_iter", type=int, default=D_ITER,
+	parser.add_argument("--D_iters", type=int, default=D_ITERS,
 		help="number of iterations to train discriminator every batch.")
 	parser.add_argument("--clamp", type=float, nargs=2, default=CLAMP,
 		help="used in WGAN for clipping the weights of the discriminator to ensure 1-Lipschitzness.")
@@ -200,7 +201,7 @@ if __name__ == "__main__":
 	if not (args.batch_size > 0):
 		parser.error("Batch size should be a positive integer.")
 
-	if not (args.D_iter > 0):
+	if not (args.D_iters > 0):
 		parser.error("Number of discriminator iterations should be a positive integer.")
 	if not (args.momentum >= 0):
 		parser.error("Momentum should be a positive integer.")
@@ -217,5 +218,6 @@ if __name__ == "__main__":
 		parser.error("Number of epochs should be a positive integer.")
 
 	# Run main function
+	args.debug_run = True  # @XXX
 	main(args)
 

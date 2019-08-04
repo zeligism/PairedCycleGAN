@@ -20,8 +20,8 @@ class MakeupNetTrainer:
 		name="trainer",
 		results_dir="results/",
 		load_model_path=None,
-		num_gpu=0,
-		num_workers=0,
+		num_gpu=1,
+		num_workers=2,
 		batch_size=4,
 		optimizer_name="sgd",
 		lr=1e-4,
@@ -32,7 +32,7 @@ class MakeupNetTrainer:
 		clamp=0.01,
 		gp_coeff=10.0,
 		stats_report_interval=50,
-		progress_check_interval=50,
+		progress_check_interval=200,
 		debug_run=False):
 		"""
 		Initializes MakeupNetTrainer.
@@ -508,6 +508,7 @@ class MakeupNetTrainer:
 			experiment_details["momentum"] = self.momentum
 
 		experiment_details["gan"] = self.gan_type
+		experiment_details["D_iter"] = self.D_iter
 
 		if self.gan_type == "wgan":
 			experiment_details["clamp"] = self.clamp
