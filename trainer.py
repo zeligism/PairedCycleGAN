@@ -28,7 +28,7 @@ class MakeupNetTrainer:
 		momentum=0.9,
 		betas=(0.9, 0.999),
 		gan_type="gan",
-		D_iter=5,
+		D_iters=5,
 		clamp=0.01,
 		gp_coeff=10.0,
 		stats_report_interval=50,
@@ -51,7 +51,7 @@ class MakeupNetTrainer:
 			momentum: The momentum of used in the optimizer, if applicable.
 			betas: The betas used in the Adam optimizer.
 			gan_type: Type of GAN to train. Choices = {gan, wgan, wgan-gp}
-			D_iter: Number of iterations to train discriminator every batch.
+			D_iters: Number of iterations to train discriminator every batch.
 			clamp: Set to None if you don't want to clamp discriminator's weight after each update.
 			gp_coeff: A coefficient for the gradient penalty (gp) of the discriminator.
 			stats_report_interval: Report stats every `stats_report_interval` batch.
@@ -77,7 +77,7 @@ class MakeupNetTrainer:
 		self.betas = betas
 
 		self.gan_type = gan_type
-		self.D_iter = D_iter
+		self.D_iters = D_iters
 		self.clamp = clamp
 		self.gp_coeff = gp_coeff
 
@@ -244,7 +244,7 @@ class MakeupNetTrainer:
 		latent = torch.randn(latent_size, device=self.device)
 		fake = self.model.G(latent)
 
-		for _ in range(self.D_iter):
+		for _ in range(self.D_iters):
 			D_loss, D_on_real, D_on_fake1 = self.D_step(real, fake)
 		G_loss, D_on_fake2 = self.G_step(fake)
 
@@ -508,7 +508,7 @@ class MakeupNetTrainer:
 			experiment_details["momentum"] = self.momentum
 
 		experiment_details["gan"] = self.gan_type
-		experiment_details["D_iter"] = self.D_iter
+		experiment_details["D_iters"] = self.D_iters
 
 		if self.gan_type == "wgan":
 			experiment_details["clamp"] = self.clamp
