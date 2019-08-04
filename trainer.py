@@ -28,10 +28,12 @@ class MakeupNetTrainer:
 		momentum=0.9,
 		betas=(0.9, 0.999),
 		gan_type="gan",
-		clip=0.01,
+		D_iter=5,
+		clamp=0.01,
 		gp_coeff=10.0,
 		stats_report_interval=50,
-		progress_check_interval=50):
+		progress_check_interval=50,
+		debug_run=False):
 		"""
 		Initializes MakeupNetTrainer.
 
@@ -49,10 +51,12 @@ class MakeupNetTrainer:
 			momentum: The momentum of used in the optimizer, if applicable.
 			betas: The betas used in the Adam optimizer.
 			gan_type: Type of GAN to train. Choices = {gan, wgan, wgan-gp}
-			clip: Set to None if you don't want to clip discriminator's weight after each update.
+			D_iter: Number of iterations to train discriminator every batch.
+			clamp: Set to None if you don't want to clamp discriminator's weight after each update.
 			gp_coeff: A coefficient for the gradient penalty (gp) of the discriminator.
 			stats_report_interval: Report stats every `stats_report_interval` batch.
 			progress_check_interval: Check progress every `progress_check_interval` batch.
+			debug: Set this to True to prevent trainer from reporting and saving results.
 		"""
 
 		# Initialize given parameters
@@ -73,11 +77,14 @@ class MakeupNetTrainer:
 		self.betas = betas
 
 		self.gan_type = gan_type
-		self.clip = clip
+		self.D_iter = D_iter
+		self.clamp = clamp
 		self.gp_coeff = gp_coeff
 
 		self.stats_report_interval = stats_report_interval
 		self.progress_check_interval = progress_check_interval
+
+		self.debug_run = debug_run
 
 
 		# Initialize device
@@ -88,8 +95,12 @@ class MakeupNetTrainer:
 
 		# Load model if necessary
 		if self.load_model_path is not None:
-			print("Loading model...")
-			self.model.load_state_dict(torch.load(self.load_model_path))
+			if not os.path.isfile(self.load_model_path):
+				print(f"Couldn't load model: file '{self.load_model_path}' does not exist")
+				print("Training model from scratch.")
+			else:
+				print("Loading model...")
+				self.model.load_state_dict(torch.load(self.load_model_path))
 		
 		# Move model to device and parallelize model if possible
 		# @TODO: Try DistributedDataParallel?
@@ -134,6 +145,8 @@ class MakeupNetTrainer:
 		return optim
 
 
+	#################### Training Methods ####################
+
 	def run(self, num_epochs, save_results=False):
 		"""
 		Runs the trainer. Trainer will train the model then save it.
@@ -154,16 +167,14 @@ class MakeupNetTrainer:
 			# Try training the model
 			self.train(data_loader)
 		finally:
-			# Stop trainer, save and report results
-			self.stop(save_results)
+			if not self.debug_run:
+				# Stop trainer, save and report results
+				self.stop(save_results)
 
-
-	#################### Training Methods ####################
 
 	def train(self, data_loader):
 		"""
 		Trains `self.model` on data loaded from data loader.
-		@TODO: improve this function, try to reduce code, refactor.
 
 		Args:
 			data_loader: An iterator from which the data is sampled.
@@ -176,32 +187,19 @@ class MakeupNetTrainer:
 
 				# Sample real images
 				real = sample["before"].to(self.device)
+				_real = sample["after"].to(self.device)
 
-				# Calculate latent vector size
-				this_batch_size = real.size()[0]
-				latent_size = torch.Size([this_batch_size, self.model.num_latent, 1, 1])
-
-				# Sample fake images from a random latent vector
-				latent = torch.randn(latent_size, device=self.device)
-				fake = self.model.G(latent)
-
-				# Train discriminator and generator
-				if self.gan_type == "gan":
-					D_of_x, D_of_G_z1 = self.D_step(real, fake)
-					D_of_G_z2 = self.G_step(fake)
-				elif self.gan_type == "wgan":
-					D_of_x, D_of_G_z1 = self.D_step_wasserstein(real, fake, clip=self.clip)
-					D_of_G_z2 = self.G_step_wasserstein(fake)
-				elif self.gan_type == "wgan-gp":
-					D_of_x, D_of_G_z1 = self.D_step_wasserstein(real, fake, gp_coeff=self.gp_coeff)
-					D_of_G_z2 = self.G_step_wasserstein(fake)
+				# Train model on the samples, and get the the discriminator's results
+				classifications = self.train_on(real)
+				_classifications = self.train_on(_real)  # @TODO
 
 				# Calculate index of data point
+				this_batch_size = real.size()[0]
 				index = batch_index * this_batch_size
 
 				# Report training stats
 				if batch_index % self.stats_report_interval == 0:
-					self.report_training_stats(index, epoch, D_of_x, D_of_G_z1, D_of_G_z2)
+					self.report_training_stats(index, epoch, *classifications)
 
 				# Check generator's progress by recording its output on a fixed input
 				if batch_index % self.progress_check_interval == 0:
@@ -210,9 +208,51 @@ class MakeupNetTrainer:
 				self.iters += this_batch_size
 
 		# Show stats and check progress at the end
-		self.report_training_stats(len(self.dataset), self.num_epochs, D_of_x, D_of_G_z1, D_of_G_z2)
+		self.report_training_stats(len(self.dataset), self.num_epochs, *classifications)
 		self.check_progress_of_generator(self.model.G)
 		print("Finished training.")
+
+
+	def train_on(self, real):
+		"""
+		Trains on a sample of real and fake data.
+		Recall that to train a GAN, we seek to find a solution to a min-max game
+		of the form `min_G max_D V(G,D)`, where G is the generator, D is the 
+		discriminator, and V(G,D) is the loss/score function.
+
+		It is a little different when it comes to Wasserstein GAN (WGAN).
+		See Theorem 2, 3 and Algorithm 1 in the original paper for more details.
+
+		Papers..
+		GAN:     https://arxiv.org/pdf/1406.2661.pdf
+		WGAN:    https://arxiv.org/pdf/1701.07875.pdf
+		WGAN-GP: https://arxiv.org/pdf/1704.00028.pdf
+
+
+		Args:
+			real: Real data points sampled from the dataset.
+
+		Returns:
+			The result of the discriminator's classifications on real and fake data.
+		"""
+
+		# Calculate latent vector size
+		this_batch_size = real.size()[0]
+		latent_size = torch.Size([this_batch_size, self.model.num_latent, 1, 1])
+
+		# Sample fake images from a random latent vector
+		latent = torch.randn(latent_size, device=self.device)
+		fake = self.model.G(latent)
+
+		for _ in range(self.D_iter):
+			D_loss, D_on_real, D_on_fake1 = self.D_step(real, fake)
+		G_loss, D_on_fake2 = self.G_step(fake)
+
+		# Record losses
+		self.D_losses.append(D_loss)
+		self.G_losses.append(G_loss)
+
+		return D_on_real, D_on_fake1, D_on_fake2
 
 
 	def D_step(self, real, fake):
@@ -224,91 +264,56 @@ class MakeupNetTrainer:
 			fake: The fake image generated by the generator.
 
 		Returns:
-			A tuple containing the mean classification of the discriminator on
-			the real images and the fake images, respectively.
+			A tuple containing the loss, the mean classification of D on
+			the real images, as well as on the fake images, respectively.
 		"""
 
 		# Zero gradients
 		self.D_optim.zero_grad()
 
-		# Initialize real and fake labels
-		batch_size = real.size()[0]
-		real_label = torch.full([batch_size], REAL, device=self.device)
-		fake_label = torch.full([batch_size], FAKE, device=self.device)
-
-		# Classify real images and calculate error
+		# Classify real and fake images
 		D_on_real = self.model.D(real)
-		D_error_on_real = F.binary_cross_entropy(D_on_real, real_label)
+		D_on_fake = self.model.D(fake.detach())  # don't pass grads to G
 
-		# Classify fake images and calculate error (don't pass gradients to G)
-		D_on_fake = self.model.D(fake.detach())
-		D_error_on_fake = F.binary_cross_entropy(D_on_fake, fake_label)
+		if self.gan_type == "gan":
+			# Create real and fake labels
+			batch_size = real.size()[0]
+			real_label = torch.full([batch_size], REAL, device=self.device)
+			fake_label = torch.full([batch_size], FAKE, device=self.device)
+			# Calculate binary cross entropy loss
+			D_error_on_real = F.binary_cross_entropy(D_on_real, real_label)
+			D_error_on_fake = F.binary_cross_entropy(D_on_fake, fake_label)
+			# Loss is: - log(D(x)) - log(1 - D(x_g)), where x_g ~ G(z)
+			# which is equiv. to maximizing: log(D(x)) + log(1 - D(x_g))
+			D_error = D_error_on_real + D_error_on_fake
 
-		# Calculate gradients from the errors and update
-		D_error = D_error_on_real + D_error_on_fake
-		D_error.backward()
-		self.D_optim.step()
+		elif self.gan_type == "wgan":
+			# Loss is: D(x) - D(x_g), where x_g ~ G(z) (assumes D is 1-Lipschitz)
+			D_error = torch.mean(D_on_real - D_on_fake)
 
-		# Record loss
-		self.D_losses.append(D_error.item())
-
-		return (
-			D_on_real.mean().item(),
-			D_on_fake.mean().item(),
-		)
-
-
-	def D_step_wasserstein(self, real, fake, clip=None, gp_coeff=None):
-		"""
-		Trains the discriminator, wasserstein-style.
-
-		Args:
-			real: The real image sampled from the dataset.
-			fake: The fake image generated by the generator.
-			clip: Clipping/clamping range such that D's params are in [-clip, clip]
-			gp_coeff: A coefficient for the gradient penalty (gp).
-
-		Returns:
-			A tuple containing the mean classification of the discriminator on
-			the real images and the fake images, respectively.
-		"""
-
-		# Zero gradients
-		self.D_optim.zero_grad()
-
-		# Classify real images
-		D_on_real = self.model.D(real)
-
-		# Classify fake images
-		D_on_fake = self.model.D(fake.detach())
-
-		# Calculate gradient penalty (only used in WGAN-GP)
-		grad_penalty = 0
-		if gp_coeff is not None:
-			interpolated = fake + torch.rand() * (real - fake)
+		elif self.gan_type == "wgan-gp":
+			# Calculate gradient penalty
+			interpolated = fake + torch.rand(device=self.device) * (real - fake)
 			D_on_inter = self.model.D(interpolated)
 			D_grad = torch.autograd.grad(D_on_inter, interpolated, retain_graph=True)
-			grad_penalty = gp_coeff * (D_grad.norm() - 1).pow(2)
+			grad_penalty = self.gp_coeff * (D_grad.norm() - 1).pow(2)
+			# Loss is: D(x_g) - D(x) + gp_coeff * (|| d/d(x_i) D(x_i)|| - 1)^2,
+			# where x_g ~ G(z), x_i <- eps * real + (1 - eps) * fake, eps ~ rand(0,1)
+			D_error = torch.mean(D_on_fake - D_on_real + grad_penalty)
 
-
-		# @XXX: this is something weird that I noticed in the order
-		# of the terms in the loss equations in WGAN's and WGAN-GP's papers.
-		# Need to investigate this further.
-		swap = -1 if clip is None else 1
-
-		# Minimize D(x) - D(x_g), where x_g ~ G(z)
-		D_error = swap * (D_on_real - D_on_fake) + grad_penalty
+		else:
+			raise ValueError(f"gan_type {self.gan_type} not supported")
+			
+		# Calculate gradients and minimize loss/error
 		D_error.backward()
 		self.D_optim.step()
 		
-		# Clip gradients to ensure 1-Lipschitzness if given a parameter `c`
-		if clip is not None:
-			[p.clamp_(-clip, clip) for p in self.model.D.parameters()]
-
-		# Record loss
-		self.D_losses.append(D_error.item())
+		# If WGAN, clamp gradients to ensure 1-Lipschitzness
+		if self.gan_type == "wgan":
+			[p.data.clamp_(*self.clamp) for p in self.model.D.parameters()]
 
 		return (
+			D_error.item(),
 			D_on_real.mean().item(),
 			D_on_fake.mean().item(),
 		)
@@ -316,47 +321,14 @@ class MakeupNetTrainer:
 
 	def G_step(self, fake):
 		"""
-		Trains the generator.
-
-		Args:
-			fake: The fake image generated by the generator.
-
-		Returns:
-			The mean classification of the discriminator on the fake images.
-		"""
-
-		# Zero gradients
-		self.G_optim.zero_grad()
-
-		# Initialize fake labels
-		batch_size = fake.size()[0]
-		fake_label = torch.full([batch_size], FAKE, device=self.device)
-
-		# Classify fake images and calculate generator's error
-		# Note that we use 1-label because we want to maximize this step.
-		# We can also back-propagate the -1*error, but this is more stable.
-		D_on_fake = self.model.D(fake)
-		G_error = F.binary_cross_entropy(D_on_fake, 1 - fake_label)
-
-		# Calculate gradients and update
-		G_error.backward()
-		self.G_optim.step()
-
-		# Record loss
-		self.G_losses.append(G_error.item())
-
-		return D_on_fake.mean().item()
-
-
-	def G_step_wasserstein(self, fake):
-		"""
 		Trains the generator, wasserstein-style.
 
 		Args:
 			fake: The fake image generated by the generator.
 
 		Returns:
-			The mean classification of the discriminator on the fake images.
+			The mean loss/error of D on the fake images as well as
+			the mean classification of the discriminator on the fake images.
 		"""
 
 		# Zero gradients
@@ -365,15 +337,26 @@ class MakeupNetTrainer:
 		# Classify fake images
 		D_on_fake = self.model.D(fake)
 
-		# Calculate gradients and maximize D(G(z))
-		G_error = -1 * D_on_fake
-		G_error.backward()
+		if self.gan_type == "gan":
+			# Calculate binary cross entropy loss with a fake binary label
+			batch_size = fake.size()[0]
+			fake_label = torch.full([batch_size], FAKE, device=self.device)
+			# Loss is: -log(D(G(z))), which is equiv. to minimizing log(1-D(G(z)))
+			# We use this loss vs. the original one for stability only
+			G_error = F.binary_cross_entropy(D_on_fake, 1 - fake_label)
+
+		elif self.gan_type == "wgan" or self.gan_type == "wgan-gp":
+			# Loss is: D(G(z)), i.e.  -D(G(z))
+			G_error = D_on_fake.mean()
+
+		else:
+			raise ValueError(f"gan_type {self.gan_type} not supported")
+
+		# Calculate gradients and minimize loss/error
+		G_error.backward()  # we use -1 to maximize
 		self.G_optim.step()
 
-		# Record loss
-		self.G_losses.append(G_error.item())
-
-		return D_on_fake.mean().item()
+		return G_error.item(), D_on_fake.mean().item()
 
 
 
@@ -518,10 +501,18 @@ class MakeupNetTrainer:
 			"optim": self.optimizer_name,
 			"lr": self.lr,
 		}
+
 		if self.optimizer_name == "adam":
 			experiment_details["betas"] = self.betas
 		else:
 			experiment_details["momentum"] = self.momentum
+
+		experiment_details["gan"] = self.gan_type
+
+		if self.gan_type == "wgan":
+			experiment_details["clamp"] = self.clamp
+		else:
+			experiment_details["lambda"] = self.gp_coeff
 
 		timestamp = "[{}]".format(datetime.datetime.now().strftime("%y%m%d-%H%M%S"))
 		experiment = delimiter.join("{}={}".format(k,v) for k,v in experiment_details.items())
