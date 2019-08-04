@@ -216,14 +216,38 @@ class MakeupNetTrainer:
 	def train_on(self, real):
 		"""
 		Trains on a sample of real and fake data.
-		Recall that to train a GAN, we seek to find a solution to a min-max game
-		of the form `min_G max_D V(G,D)`, where G is the generator, D is the 
-		discriminator, and V(G,D) is the loss/score function.
+		Throughout this file, we will denote a sample from the real data
+		distribution, fake data distribution, and latent variables as:
+		    x ~ real,    x_g ~ fake,    z ~ latent
 
-		It is a little different when it comes to Wasserstein GAN (WGAN).
-		See Theorem 2, 3 and Algorithm 1 in the original paper for more details.
+		Now recall that in order to train a GAN, we try to find a solution to
+		a min-max game of the form `min_G max_D V(G,D)`, where G is the generator,
+		D is the discriminator, and V(G,D) is the score function.
+		For a regular GAN, V(G,D) = log(D(x)) + log(1 - D(x_g)),
+		which is the Jensen-Shannon (JS) divergence between the probability
+		distributions P(x) and P(x_g), where P(x_g) is parameterized by G.
 
-		Papers..
+		When it comes to Wasserstein GAN (WGAN), the objective is to minimize
+		the Wasserstein (or Earth-Mover) distance instead of the JS-divergence.
+		See Theorem 3 and Algorithm 1 in the original paper for more details.
+		We can achieve that (thanks to the Kantorovich-Rubinstein duality)
+		by first maximizing  `D(x) - D(x_g)` in the space of 1-Lipschitz
+		discriminators D, where x ~ data and x_g ~ fake.
+		Then, we have the gradient wrt G of the Wasserstein distance equal
+		to the gradient of -D(G(z)).
+		Since we assumed that D should be 1-Lipschitz, we can enforce
+		k-Lipschitzness by clamping the weights of D to be in some fixed box,
+		which would be approximate up to a scaling factor.
+
+		Enforcing Lipschitzness is done more elegantly in WGAN-GP,
+		which is just WGAN with gradient penalty (GP). The gradient penalty
+		is used because of the statement that a differentiable function is
+		1-Lipschitz iff it has gradient norm equal to 1 almost everywhere
+		under P(x) and P(x_g). Hence, the objective will be similar to WGAN,
+		which is `min_G max_D of D(x) - D(x_g)`, but now we add the gradient
+		penalty in the D_step such that it will be minimized.
+
+		Links to the papers:
 		GAN:     https://arxiv.org/pdf/1406.2661.pdf
 		WGAN:    https://arxiv.org/pdf/1701.07875.pdf
 		WGAN-GP: https://arxiv.org/pdf/1704.00028.pdf
@@ -257,7 +281,7 @@ class MakeupNetTrainer:
 
 	def D_step(self, real, fake):
 		"""
-		Trains the discriminator.
+		Trains the discriminator. Maximize the score function.
 
 		Args:
 			real: The real image sampled from the dataset.
@@ -281,15 +305,15 @@ class MakeupNetTrainer:
 			real_label = torch.full([batch_size], REAL, device=self.device)
 			fake_label = torch.full([batch_size], FAKE, device=self.device)
 			# Calculate binary cross entropy loss
-			D_error_on_real = F.binary_cross_entropy(D_on_real, real_label)
-			D_error_on_fake = F.binary_cross_entropy(D_on_fake, fake_label)
-			# Loss is: - log(D(x)) - log(1 - D(x_g)), where x_g ~ G(z)
+			D_loss_on_real = F.binary_cross_entropy(D_on_real, real_label)
+			D_loss_on_fake = F.binary_cross_entropy(D_on_fake, fake_label)
+			# Loss is: - log(D(x)) - log(1 - D(x_g)),
 			# which is equiv. to maximizing: log(D(x)) + log(1 - D(x_g))
-			D_error = D_error_on_real + D_error_on_fake
+			D_loss = D_loss_on_real + D_loss_on_fake
 
 		elif self.gan_type == "wgan":
-			# Loss is: D(x) - D(x_g), where x_g ~ G(z) (assumes D is 1-Lipschitz)
-			D_error = torch.mean(D_on_real - D_on_fake)
+			# Maximize: D(x) - D(x_g), i.e. minimize -(D(x) - D(x_g))
+			D_loss = -1 * torch.mean(D_on_real - D_on_fake)
 
 		elif self.gan_type == "wgan-gp":
 			# Calculate gradient penalty
@@ -297,23 +321,23 @@ class MakeupNetTrainer:
 			D_on_inter = self.model.D(interpolated)
 			D_grad = torch.autograd.grad(D_on_inter, interpolated, retain_graph=True)
 			grad_penalty = self.gp_coeff * (D_grad.norm() - 1).pow(2)
-			# Loss is: D(x_g) - D(x) + gp_coeff * (|| d/d(x_i) D(x_i)|| - 1)^2,
-			# where x_g ~ G(z), x_i <- eps * real + (1 - eps) * fake, eps ~ rand(0,1)
-			D_error = torch.mean(D_on_fake - D_on_real + grad_penalty)
+			# Maximize: D(x) - D(x_g) - gp_coeff * (|| grad of D(x_i) wrt x_i || - 1)^2,
+			# where x_i <- eps * x + (1 - eps) * x_g, and eps ~ rand(0,1)
+			D_loss = -1 * torch.mean(D_on_real - D_on_fake - grad_penalty)
 
 		else:
 			raise ValueError(f"gan_type {self.gan_type} not supported")
 			
-		# Calculate gradients and minimize loss/error
-		D_error.backward()
+		# Calculate gradients and minimize loss
+		D_loss.backward()
 		self.D_optim.step()
 		
-		# If WGAN, clamp gradients to ensure 1-Lipschitzness
+		# If WGAN, clamp D's weights to ensure k-Lipschitzness
 		if self.gan_type == "wgan":
 			[p.data.clamp_(*self.clamp) for p in self.model.D.parameters()]
 
 		return (
-			D_error.item(),
+			D_loss.item(),
 			D_on_real.mean().item(),
 			D_on_fake.mean().item(),
 		)
@@ -321,13 +345,13 @@ class MakeupNetTrainer:
 
 	def G_step(self, fake):
 		"""
-		Trains the generator, wasserstein-style.
+		Trains the generator. Minimize the score function.
 
 		Args:
 			fake: The fake image generated by the generator.
 
 		Returns:
-			The mean loss/error of D on the fake images as well as
+			The mean loss of D on the fake images as well as
 			the mean classification of the discriminator on the fake images.
 		"""
 
@@ -342,21 +366,21 @@ class MakeupNetTrainer:
 			batch_size = fake.size()[0]
 			fake_label = torch.full([batch_size], FAKE, device=self.device)
 			# Loss is: -log(D(G(z))), which is equiv. to minimizing log(1-D(G(z)))
-			# We use this loss vs. the original one for stability only
-			G_error = F.binary_cross_entropy(D_on_fake, 1 - fake_label)
+			# We use this loss vs. the original one for stability only.
+			G_loss = F.binary_cross_entropy(D_on_fake, 1 - fake_label)
 
 		elif self.gan_type == "wgan" or self.gan_type == "wgan-gp":
-			# Loss is: D(G(z)), i.e.  -D(G(z))
-			G_error = D_on_fake.mean()
+			# Minimize: -D(G(z))
+			G_loss = -D_on_fake.mean()
 
 		else:
 			raise ValueError(f"gan_type {self.gan_type} not supported")
 
-		# Calculate gradients and minimize loss/error
-		G_error.backward()  # we use -1 to maximize
+		# Calculate gradients and minimize loss
+		G_loss.backward()  # we use -1 to maximize
 		self.G_optim.step()
 
-		return G_error.item(), D_on_fake.mean().item()
+		return G_loss.item(), D_on_fake.mean().item()
 
 
 

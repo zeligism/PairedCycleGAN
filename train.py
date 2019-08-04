@@ -166,7 +166,7 @@ if __name__ == "__main__":
 	parser.add_argument("--D_iters", type=int, default=D_ITERS,
 		help="number of iterations to train discriminator every batch.")
 	parser.add_argument("--clamp", type=float, nargs=2, default=CLAMP,
-		help="used in WGAN for clipping the weights of the discriminator to ensure 1-Lipschitzness.")
+		help="used in WGAN for clamping the weights of the discriminator.")
 	parser.add_argument("--gp_coeff", type=float, default=GRADIENT_PENALTY_COEFF,
 		help="a coefficient to multiply with the gradient penalty in the loss of WGAN-GP.")
 

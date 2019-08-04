@@ -84,6 +84,7 @@ class Discriminator(nn.Module):
 	"""The discriminator of the MakeupNet"""
 
 	def __init__(self, num_channels, num_features, num_latent, with_landmarks=False):
+		# @TODO: remove BatchNorm for WGAN-GP
 		super().__init__()
 		self.main = nn.Sequential(
 			# input is (nc) x 64 x 64
