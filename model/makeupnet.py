@@ -8,7 +8,8 @@ class MakeupNet(nn.Module):
     """The main module of the MakeupNet"""
 
     def __init__(self, name="makeupnet",
-        num_channels=3, num_features=64, num_latent=100, with_landmarks=False):
+        num_channels=3, num_features=64, num_latent=100,
+        depth=5, gan_type="gan", with_landmarks=False):
         """
         Initializes MakeupNet.
 
@@ -51,30 +52,38 @@ class MakeupNet(nn.Module):
 class Generator(nn.Module):
     """The generator of the MakeupNet"""
 
-    def __init__(self, num_channels, num_features, num_latent, with_landmarks=False):
+    def __init__(self, num_channels, num_features, num_latent,
+        depth=5, gan_type="gan", with_landmarks=False):
         super().__init__()
-        self.main = nn.Sequential(
-            # input is Z, going into a convolution
-            nn.ConvTranspose2d(num_latent, num_features * 8, 4, stride=1, padding=0, bias=False),
-            nn.BatchNorm2d(num_features * 8),
-            nn.ReLU(True),
-            # state size. (num_features*8) x 4 x 4
-            nn.ConvTranspose2d(num_features * 8, num_features * 4, 4, stride=2, padding=1, bias=False),
-            nn.BatchNorm2d(num_features * 4),
-            nn.ReLU(True),
-            # state size. (num_features*4) x 8 x 8
-            nn.ConvTranspose2d(num_features * 4, num_features * 2, 4, stride=2, padding=1, bias=False),
-            nn.BatchNorm2d(num_features * 2),
-            nn.ReLU(True),
-            # state size. (num_features*2) x 16 x 16
-            nn.ConvTranspose2d(num_features * 2, num_features, 4, stride=2, padding=1, bias=False),
-            nn.BatchNorm2d(num_features),
-            nn.ReLU(True),
-            # state size. (num_features) x 32 x 32
-            nn.ConvTranspose2d(num_features, num_channels, 4, stride=2, padding=1, bias=False),
-            nn.Tanh()
-            # state size. (num_channels) x 64 x 64
-        )
+
+        modules = []
+
+        # Layer #1 (in): Generating from latent vector
+        modules.append(nn.ConvTranspose2d(num_latent, num_features * 8, 4, stride=1, padding=0, bias=False))
+        modules.append(nn.BatchNorm2d(num_features * 8))
+        modules.append(nn.ReLU(True))
+
+        # Layer #2: state size. (num_features*8) x 4 x 4
+        modules.append(nn.ConvTranspose2d(num_features * 8, num_features * 4, 4, stride=2, padding=1, bias=False))
+        modules.append(nn.BatchNorm2d(num_features * 4))
+        modules.append(nn.ReLU(True))
+
+        # Layer #3: state size. (num_features*4) x 8 x 8
+        modules.append(nn.ConvTranspose2d(num_features * 4, num_features * 2, 4, stride=2, padding=1, bias=False))
+        modules.append(nn.BatchNorm2d(num_features * 2))
+        modules.append(nn.ReLU(True))
+
+        # Layer #4: state size. (num_features*2) x 16 x 16
+        modules.append(nn.ConvTranspose2d(num_features * 2, num_features, 4, stride=2, padding=1, bias=False))
+        modules.append(nn.BatchNorm2d(num_features))
+        modules.append(nn.ReLU(True))
+
+        # Layer #5 (out): state size. (num_features) x 32 x 32
+        modules.append(nn.ConvTranspose2d(num_features, num_channels, 4, stride=2, padding=1, bias=False))
+        modules.append(nn.Tanh())
+
+        self.main = nn.Sequential(*modules)
+
 
     def forward(self, inputs):
         return self.main(inputs)
@@ -83,29 +92,37 @@ class Generator(nn.Module):
 class Discriminator(nn.Module):
     """The discriminator of the MakeupNet"""
 
-    def __init__(self, num_channels, num_features, num_latent, with_landmarks=False):
-        # @TODO: remove BatchNorm for WGAN-GP
+    def __init__(self, num_channels, num_features, num_latent,
+        depth=5, gan_type="gan", with_landmarks=False):
         super().__init__()
-        self.main = nn.Sequential(
-            # input is (nc) x 64 x 64
-            nn.Conv2d(num_channels, num_features, 4, 2, 1, bias=False),
-            nn.LeakyReLU(0.2, inplace=True),
-            # state size. (num_features) x 32 x 32
-            nn.Conv2d(num_features, num_features * 2, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(num_features * 2),
-            nn.LeakyReLU(0.2, inplace=True),
-            # state size. (num_features*2) x 16 x 16
-            nn.Conv2d(num_features * 2, num_features * 4, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(num_features * 4),
-            nn.LeakyReLU(0.2, inplace=True),
-            # state size. (num_features*4) x 8 x 8
-            nn.Conv2d(num_features * 4, num_features * 8, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(num_features * 8),
-            nn.LeakyReLU(0.2, inplace=True),
-            # state size. (num_features*8) x 4 x 4
-            nn.Conv2d(num_features * 8, 1, 4, 1, 0, bias=False),
-            nn.Sigmoid()
-        )
+
+        modules = []
+
+        # Layer #1 (in): input is (nc) x 64 x 64
+        modules.append(nn.Conv2d(num_channels, num_features, 4, stride=2, padding=1, bias=False))
+        modules.append(nn.LeakyReLU(0.2, inplace=True))
+
+        # Layer #2: state size. (num_features) x 32 x 32
+        modules.append(nn.Conv2d(num_features, num_features * 2, 4, stride=2, padding=1, bias=False))
+        if gan_type != "wgan-gp": modules.append(nn.BatchNorm2d(num_features * 2))
+        modules.append(nn.LeakyReLU(0.2, inplace=True))
+
+        # Layer #3: state size. (num_features*2) x 16 x 16
+        modules.append(nn.Conv2d(num_features * 2, num_features * 4, 4, stride=2, padding=1, bias=False))
+        if gan_type != "wgan-gp": modules.append(nn.BatchNorm2d(num_features * 4))
+        modules.append(nn.LeakyReLU(0.2, inplace=True))
+
+        # Layer #4: state size. (num_features*4) x 8 x 8
+        modules.append(nn.Conv2d(num_features * 4, num_features * 8, 4, stride=2, padding=1, bias=False))
+        if gan_type != "wgan-gp": modules.append(nn.BatchNorm2d(num_features * 8))
+        modules.append(nn.LeakyReLU(0.2, inplace=True))
+
+        # Layer #5 (out): state size. (num_features*8) x 4 x 4
+        modules.append(nn.Conv2d(num_features * 8, 1, 4, stride=1, padding=0, bias=False))
+        modules.append(nn.Sigmoid())
+
+        self.main = nn.Sequential(*modules)
+
 
     def forward(self, inputs):
         return self.main(inputs).view(-1)
