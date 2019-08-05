@@ -9,7 +9,6 @@ from dataset.transforms import MakeupSampleTransform
 from model.makeupnet import MakeupNet
 from trainer import MakeupNetTrainer
 
-# @TODO: replace tabs with spaces in all files
 
 ### DEFAULT PARAMETERS ###
 

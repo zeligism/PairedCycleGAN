@@ -292,6 +292,8 @@ class MakeupNetTrainer:
             the real images, as well as on the fake images, respectively.
         """
 
+        batch_size = real.size()[0]
+
         # Zero gradients
         self.D_optim.zero_grad()
 
@@ -301,7 +303,6 @@ class MakeupNetTrainer:
 
         if self.gan_type == "gan":
             # Create real and fake labels
-            batch_size = real.size()[0]
             real_label = torch.full([batch_size], REAL, device=self.device)
             fake_label = torch.full([batch_size], FAKE, device=self.device)
             # Calculate binary cross entropy loss
@@ -317,10 +318,12 @@ class MakeupNetTrainer:
 
         elif self.gan_type == "wgan-gp":
             # Calculate gradient penalty
-            interpolated = fake + torch.rand(device=self.device) * (real - fake)
+            eps = torch.rand(real.size(), device=self.device)
+            interpolated = fake + eps * (real - fake)
             D_on_inter = self.model.D(interpolated)
-            D_grad = torch.autograd.grad(D_on_inter, interpolated, retain_graph=True)
-            grad_penalty = self.gp_coeff * (D_grad.norm() - 1).pow(2)
+            # Summing passes the gradients to each batch independently
+            D_grad = torch.autograd.grad(D_on_inter.sum(), interpolated, retain_graph=True)
+            grad_penalty = self.gp_coeff * (D_grad[0].norm() - 1).pow(2)
             # Maximize: D(x) - D(x_g) - gp_coeff * (|| grad of D(x_i) wrt x_i || - 1)^2,
             # where x_i <- eps * x + (1 - eps) * x_g, and eps ~ rand(0,1)
             D_loss = -1 * torch.mean(D_on_real - D_on_fake - grad_penalty)
