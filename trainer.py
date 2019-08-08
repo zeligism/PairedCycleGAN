@@ -5,8 +5,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.utils as vutils
-import matplotlib.pyplot as plt
-import matplotlib.animation as animation
+
+from report_utils import plot_losses, create_progress_animation
 
 
 class MakeupNetTrainer:
@@ -28,8 +28,7 @@ class MakeupNetTrainer:
         clamp=0.01,
         gp_coeff=10.0,
         stats_report_interval=50,
-        progress_check_interval=200,
-        debug_run=False):
+        progress_check_interval=200):
         """
         Initializes MakeupNetTrainer.
 
@@ -52,7 +51,6 @@ class MakeupNetTrainer:
             gp_coeff: A coefficient for the gradient penalty (gp) of the discriminator.
             stats_report_interval: Report stats every `stats_report_interval` batch.
             progress_check_interval: Check progress every `progress_check_interval` batch.
-            debug: Set this to True to prevent trainer from reporting and saving results.
         """
 
         # Initialize given parameters
@@ -61,7 +59,7 @@ class MakeupNetTrainer:
 
         self.name = name
         self.results_dir = results_dir
-        self.load_model_path = load_model_path
+        #self.load_model_path = load_model_path
         
         self.num_gpu = num_gpu
         self.num_workers = num_workers
@@ -80,26 +78,15 @@ class MakeupNetTrainer:
         self.stats_report_interval = stats_report_interval
         self.progress_check_interval = progress_check_interval
 
-        self.debug_run = debug_run
-
-
-        # Initialize device
-        if torch.cuda.is_available() and self.num_gpu > 0:
-            self.device = torch.device("cuda:0")
-        else:
-            self.device = torch.device("cpu")
-
         # Load model if necessary
-        if self.load_model_path is not None:
-            if not os.path.isfile(self.load_model_path):
-                print(f"Couldn't load model: file '{self.load_model_path}' does not exist")
-                print("Training model from scratch.")
-            else:
-                print("Loading model...")
-                self.model.load_state_dict(torch.load(self.load_model_path))
+        if load_model_path is not None:
+            self.load_model(load_model_path)
         
+        # Initialize device
+        using_cuda = torch.cuda.is_available() and self.num_gpu > 0
+        self.device = torch.device("cuda:0" if using_cuda else "cpu")
+
         # Move model to device and parallelize model if possible
-        # @TODO: Try DistributedDataParallel?
         self.model = self.model.to(self.device)
         if self.device.type == "cuda" and self.num_gpu > 1:
             self.model = nn.DistributedDataParallel(self.model, list(range(self.num_gpu)))
@@ -109,14 +96,12 @@ class MakeupNetTrainer:
         #self.D_optim = self.init_optim(self.model.D.parameters())  # @XXX
         self.G_optim = self.init_optim(self.model.G.parameters())
 
-        self.num_epochs = 0  # set in in self.run()
-        self.iters = 0  # number of samples processed so far
-
         # Initialize variables used for tracking loss and progress
+        self.iters = 1  # current iteration
         self.losses = {"D": [-0.], "G": [-0.]}
         self.evals = {"D_on_real": [-0.], "D_on_fake1": [-0.], "D_on_fake2": [-0.]}
-        self.fixed_sample_progress = []
-        self.fixed_noise = torch.randn([64, self.model.num_latents], device=self.device)
+        self.progress_frames = []
+        self.fixed_latent = torch.randn([64, self.model.num_latents], device=self.device)
 
 
     def init_optim(self, params):
@@ -142,6 +127,20 @@ class MakeupNetTrainer:
         return optim
 
 
+    def load_model(self, model_path):
+        if not os.path.isfile(model_path):
+            print(f"Couldn't load model: file '{model_path}' does not exist")
+            print("Training model from scratch.")
+        else:
+            print("Loading model...")
+            self.model.load_state_dict(torch.load(model_path))
+
+
+    def save_model(self, model_path):
+        print("Saving model")
+        torch.save(self.model.state_dict(), model_path)
+
+
     #################### Training Methods ####################
 
     def run(self, num_epochs, save_results=False):
@@ -150,11 +149,9 @@ class MakeupNetTrainer:
         Note that running trainer more than once will accumulate the results.
 
         Args:
-            num_epochs: Run trainer for `num_epochs` epochs.
+            num_epochs: Number of epochs to run.
             save_results: A flag indicating whether we should save the results this run.
         """
-
-        self.num_epochs = num_epochs
 
         # Initialize data loader
         data_loader = torch.utils.data.DataLoader(self.dataset,
@@ -162,47 +159,47 @@ class MakeupNetTrainer:
 
         try:
             # Try training the model
-            self.train(data_loader)
+            self.train(data_loader, num_epochs)
         finally:
-            if not self.debug_run:
-                # Stop trainer, save and report results
-                self.stop(save_results)
+            # Stop trainer, report results
+            self.stop(save_results)
 
 
-    def train(self, data_loader):
+    def train(self, data_loader, num_epochs):
         """
         Trains `self.model` on data loaded from data loader.
 
         Args:
             data_loader: An iterator from which the data is sampled.
+            num_epochs: Number of epochs to run.
         """
+
+        num_batches = len(data_loader)
 
         print("Starting Training Loop...")
         # For each epoch
-        for epoch in range(self.num_epochs):
+        for epoch in range(num_epochs):
             for batch_index, sample in enumerate(data_loader):
 
                 # Sample real images
                 real = sample["before"].to(self.device)
-                #_real = sample["after"].to(self.device)
 
                 # Train model on the samples, and get the the discriminator's results
-                classifications = self.train_on(real)
-                #_classifications = self.train_on(_real)  # @TODO
+                self.train_on(real)
 
                 # Report training stats
                 if batch_index % self.stats_report_interval == 0:
-                    self.report_training_stats(batch_index, epoch, *classifications)
+                    self.report_training_stats(batch_index, num_batches, epoch, num_epochs)
 
                 # Check generator's progress by recording its output on a fixed input
                 if batch_index % self.progress_check_interval == 0:
-                    self.check_progress_of_generator(self.model.G)
+                    self.check_progress_of_generator()
 
                 self.iters += 1
 
         # Show stats and check progress at the end
-        self.report_training_stats(len(self.dataset), self.num_epochs, *classifications)
-        self.check_progress_of_generator(self.model.G)
+        self.report_training_stats(num_batches, num_batches, num_epochs, num_epochs)
+        self.check_progress_of_generator()
         print("Finished training.")
 
 
@@ -263,15 +260,16 @@ class MakeupNetTrainer:
         # Train discriminator
         D_loss, D_on_real, D_on_fake1 = self.D_step(real, fake)
 
-        # Sample latent and fake again
-        latent = torch.randn(latent_size, device=self.device)
-        fake = self.model.G(latent)
         # Train generator if we trained discriminator D_iters time
-        if (self.iters + 1) % (self.D_iters + 1) == 0:
-          G_loss, D_on_fake2 = self.G_step(fake)
+        if self.iters % self.D_iters == 0:
+            # Sample latent and fake again
+            latent = torch.randn(latent_size, device=self.device)
+            fake = self.model.G(latent)
+            G_loss, D_on_fake2 = self.G_step(fake)
         else:
-          G_loss = self.losses["G"][-1]
-          D_on_fake2 = self.evals["D_on_fake2"][-1]
+            # @TODO: I'm sure there is a better way to handle this
+            G_loss = self.losses["G"][-1]
+            D_on_fake2 = self.evals["D_on_fake2"][-1]
 
         # Record losses and evaluations
         self.losses["D"].append(D_loss)
@@ -394,6 +392,88 @@ class MakeupNetTrainer:
         return G_loss.item(), D_on_fake.mean().item()
 
 
+    #################### Reporting and Tracking Methods ####################
+
+    def stop(self, save_results=False):
+        """
+        Stops the trainer and report the result of the experiment.
+
+        Args:
+            save_results: Results will be saved if this was set to True.
+        """
+
+        if not save_results:
+            plot_losses()
+            return
+
+        # Create results directory if it hasn't been created yet
+        if not os.path.isdir(self.results_dir): os.mkdir(self.results_dir)
+
+        # Create experiment directory in the model's directory
+        experiment_dir = os.path.join(self.results_dir, self.get_experiment_name())
+        if not os.path.isdir(experiment_dir): os.mkdir(experiment_dir)
+
+        # Save model
+        model_path = os.path.join(experiment_dir, "model.pt")
+        self.save_model(model_path)
+
+        # Plot losses of D and G
+        plot_file = os.path.join(experiment_dir, "losses.png")
+        plot_losses(self.losses, plot_file)
+
+        # Create an animation of the generator's progress
+        animation_file = os.path.join(experiment_dir, "progress.mp4")
+        create_progress_animation(self.progress_frames, animation_file)
+
+
+    def check_progress_of_generator(self):
+        """
+        Check generator's output on a fixed latent vector and record it.
+        """
+
+        with torch.no_grad():
+            fixed_fake = self.model.G(self.fixed_latent).detach()
+
+        progress_grid = vutils.make_grid(fixed_fake.cpu(), padding=2, normalize=True)
+
+        self.progress_frames.append(progress_grid)
+
+
+    def report_training_stats(self, batch_index, num_batches, epoch, num_epochs, precision=4):
+        """
+        Reports/prints the training stats to the console.
+
+        Args:
+            batch_index: Index of the current batch.
+            num_batches: Max number of batches.
+            epoch: Current epoch.
+            num_epochs: Max number of epochs.
+            precision: Precision of the float numbers reported.
+        """
+
+        report = \
+            "[{epoch}/{num_epochs}][{batch_index}/{num_batches}]\t" \
+            "Loss of D = {D_loss:.{p}f}\t" \
+            "Loss of G = {G_loss:.{p}f}\t" \
+            "D(x) = {D_of_x:.{p}f}\t" \
+            "D(G(z)) = {D_of_G_z1:.{p}f} / {D_of_G_z2:.{p}f}"
+
+        stats = {
+            "epoch": epoch,
+            "num_epochs": num_epochs,
+            "batch_index": batch_index,
+            "num_batches": num_batches,
+            "D_loss": self.losses["D"][-1],
+            "G_loss": self.losses["G"][-1],
+            "D_of_x": self.evals["D_on_real"][-1],
+            "D_of_G_z1": self.evals["D_on_fake1"][-1],
+            "D_of_G_z2": self.evals["D_on_fake2"][-1],
+            "p": precision,
+        }
+
+        print(report.format(**stats))
+
+
     def get_experiment_name(self, delimiter=", "):
         """
         Get the name of trainer's training train...
@@ -427,131 +507,4 @@ class MakeupNetTrainer:
         experiment = delimiter.join("{}={}".format(k,v) for k,v in experiment_details.items())
 
         return timestamp + " " + experiment
-
-        
-    #################### Reporting and Tracking Methods ####################
-
-    def check_progress_of_generator(self, generator):
-        """
-        Check generator's output on a fixed latent vector and record it.
-
-        Args:
-            generator: The generator which we want to check.
-        """
-
-        with torch.no_grad():
-            fixed_fake = generator(self.fixed_noise).detach().cpu()
-            fixed_fake = fixed_fake * 0.5 + 0.5  # Un-normalize
-
-        self.fixed_sample_progress.append(
-            vutils.make_grid(fixed_fake, padding=2, normalize=True)
-        )
-
-
-    def report_training_stats(self, batch_index, epoch, D_of_x, D_of_G_z1, D_of_G_z2, precision=4):
-        """
-        Reports/prints the training stats to the console.
-
-        Args:
-            batch_index: Index of the current batch.
-            epoch: Current epoch.
-            D_of_x: Mean classification of the discriminator on the real images.
-            D_of_G_z1: Mean classification of the discriminator on the fake images (D_step).
-            D_of_G_z2: Mean classification of the discriminator on the fake images (G_step).
-            precision: Precision of the float numbers reported.
-        """
-
-        report = \
-            "[{epoch}/{num_epochs}][{index}/{len_dataset}]\t" \
-            "Loss of D = {D_loss:.{p}f}\t" \
-            "Loss of G = {G_loss:.{p}f}\t" \
-            "D(x) = {D_of_x:.{p}f}\t" \
-            "D(G(z)) = {D_of_G_z1:.{p}f} / {D_of_G_z2:.{p}f}"
-
-        stats = {
-            "epoch": epoch,
-            "num_epochs": self.num_epochs,
-            "index": batch_index * self.batch_size,
-            "len_dataset": len(self.dataset),
-            "D_loss": self.losses["D"][-1],
-            "G_loss": self.losses["G"][-1],
-            "D_of_x": self.evals["D_on_real"][-1],
-            "D_of_G_z1": self.evals["D_on_fake1"][-1],
-            "D_of_G_z2": self.evals["D_on_fake2"][-1],
-            "p": precision,
-        }
-
-        print(report.format(**stats))
-
-
-    def stop(self, save_results=False):
-        """
-        Reports the result of the experiment.
-
-        Args:
-            save_results: Results will be saved if this was set to True.
-        """
-        
-        # Create results directory if it hasn't been created yet
-        if not os.path.isdir(self.results_dir): os.mkdir(self.results_dir)
-
-        # Create experiment directory in the model's directory
-        experiment_dir = os.path.join(self.results_dir, self.get_experiment_name())
-        if not os.path.isdir(experiment_dir): os.mkdir(experiment_dir)
-
-        # always save model
-        print("Saving model...")
-        trained_model_path = os.path.join(experiment_dir, "model.pt")
-        torch.save(self.model.state_dict(), trained_model_path)
-
-        # Report results, and save if necessary
-        if not save_results:
-            self.plot_losses()
-        else:
-            # Plot losses of D and G
-            plot_file = os.path.join(experiment_dir, "losses.png")
-            self.plot_losses(plot_file) 
-
-            # Create an animation of the generator's progress
-            animation_file = os.path.join(experiment_dir, "progress.mp4")
-            self.create_progress_animation(animation_file)
-
-
-    def plot_losses(self, filename=None):
-        """
-        Plots the losses of the discriminator and the generator.
-
-        Args:
-            filename: The plot's filename. if None, plot won't be saved.
-        """
-
-        plt.figure(figsize=(10,5))
-        plt.title("Generator and Discriminator Loss During Training")
-        for label, losses in self.losses.items():
-            plt.plot(losses, label=label)
-        plt.xlabel("iterations")
-        plt.ylabel("loss")
-        plt.legend()
-        if filename is not None: plt.savefig(filename)
-        plt.show()
-
-
-    def create_progress_animation(self, filename):
-        """
-        Creates a video of the progress of the generator on a fixed latent vector.
-
-        Args:
-            filename: The animation's filename. if None, the animation won't be saved.
-        """
-
-        fig = plt.figure(figsize=(8,8))
-        plt.axis("off")
-        ims = [[plt.imshow(img.permute(1,2,0), animated=True)]
-            for img in self.fixed_sample_progress]
-        ani = animation.ArtistAnimation(fig, ims, blit=True)
-        
-        ani.save(filename)
-
-        # Uncomment the following line to show this on a notebook
-        # ani.to_jshtml()
 
