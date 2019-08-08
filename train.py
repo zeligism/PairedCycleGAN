@@ -103,7 +103,6 @@ def main(args):
         "gp_coeff": args.gp_coeff,
         "stats_report_interval": args.stats_interval,
         "progress_check_interval": args.progress_interval,
-        "debug_run": args.debug_run,
     }
 
     # Start initializing dataset, model, and trainer
@@ -181,8 +180,6 @@ if __name__ == "__main__":
         help="number of training epochs (i.e. full runs on the dataset).")
     parser.add_argument("--save_results", action="store_true",
         help="save the results of the experiment.")
-    parser.add_argument("--debug_run", action="store_true",
-        help="just run trainer without reporting or saving anything.")
     
     # Parse arguments
     args = parser.parse_args()
