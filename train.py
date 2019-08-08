@@ -21,22 +21,22 @@ DATASET_DIR = os.path.join(FILE_DIR, "dataset", "data", "processing", "faces")
 
 ### Network parameters ###
 NUM_CHANNELS = 3
-NUM_LATENT = 100
+NUM_LATENTS = 128
 NUM_FEATURES = 64
 
 ### Training parameters ###
 TRAINER_NAME = "trainer"
 RESULTS_DIR = "results/"
-LOAD_MODEL_PATH = "model/makeupnet.pt"
+LOAD_MODEL_PATH = None
 
 NUM_GPU = 1
 NUM_WORKERS = 2
 BATCH_SIZE = 4
 
-OPTIMIZER_NAME = "sgd"
+OPTIMIZER_NAME = "adam"
 LEARNING_RATE = 1e-4
 MOMENTUM = 0.9
-BETAS = (0.9, 0.999)
+BETAS = (0.5, 0.9)
 
 GAN_TYPE = "gan"
 D_ITERS = 5
@@ -65,7 +65,9 @@ def main(args):
     # Define data transformations
     transform_list = list(map(MakeupSampleTransform, [
         transforms.Resize((64, 64)),
-        transforms.ToTensor(),  # necessary
+        transforms.ColorJitter(brightness=0.1),
+        transforms.ToTensor(),
+        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
     ]))
 
     # Define dataset parameters
@@ -78,7 +80,7 @@ def main(args):
     # Define model parameters
     model_params = {
         "num_channels": args.num_channels,
-        "num_latent": args.num_latent,
+        "num_latents": args.num_latents,
         "num_features": args.num_features,
         "with_landmarks": args.with_landmarks,
     }
@@ -87,12 +89,12 @@ def main(args):
     trainer_params = {
         "name": args.trainer_name,
         "results_dir": args.results_dir,
-        "load_model_path": args.load_model_path,
+        "load_model_path": args.load_model,
         "num_gpu": args.num_gpu,
         "num_workers": args.num_workers,
         "batch_size": args.batch_size,
         "optimizer_name": args.optimizer,
-        "lr": args.lr,
+        "lr": args.learning_rate,
         "momentum": args.momentum,
         "betas": tuple(args.betas),
         "gan_type": args.gan_type,
@@ -129,7 +131,7 @@ if __name__ == "__main__":
     ### Model ###
     parser.add_argument("--num_channels", type=int, default=NUM_CHANNELS,
         help="number of image channels in the dataset.")
-    parser.add_argument("--num_latent", type=int, default=NUM_LATENT,
+    parser.add_argument("--num_latents", type=int, default=NUM_LATENTS,
         help="number of latent factors from which an image will be generated.")
     parser.add_argument("--num_features", type=int, default=NUM_FEATURES,
         help="number of features on the layers of the discriminator (and the generator as well).")
@@ -139,7 +141,7 @@ if __name__ == "__main__":
         help="name of the model trainer (which is also the name of your experiment).")
     parser.add_argument("--results_dir", type=str, default=RESULTS_DIR,
         help="directory where the results for each run will be saved.")
-    parser.add_argument("--load_model_path", type=str, default=LOAD_MODEL_PATH,
+    parser.add_argument("--load_model", type=str, default=LOAD_MODEL_PATH,
         help="the path of the file where the model will be loaded and experiments will be saved.")
     
     parser.add_argument("--num_gpu", type=int, default=NUM_GPU,
@@ -152,7 +154,7 @@ if __name__ == "__main__":
     parser.add_argument("--optimizer", type=str.lower, default=OPTIMIZER_NAME,
         help="the name of the optimizer used for training (SGD, Adam, RMSProp)",
         choices=("sgd", "adam", "rmsprop"),)
-    parser.add_argument("--lr", type=float, default=LEARNING_RATE,
+    parser.add_argument("--learning_rate", type=float, default=LEARNING_RATE,
         help="the learning rate, which controls the size of the optimization update.")
     parser.add_argument("--momentum", type=float, default=MOMENTUM,
         help="used in SGD and RMSProp optimizers.")
@@ -188,7 +190,7 @@ if __name__ == "__main__":
     # Additional validation of input
     if not (args.num_channels > 0):
         parser.error("Number of channels should be a positive integer.")
-    if not (args.num_latent > 0):
+    if not (args.num_latents > 0):
         parser.error("Number of latent dimensions should be a positive integer.")
     if not (args.num_features > 0):
         parser.error("Number of features per layer should be a positive integer.")
@@ -217,6 +219,6 @@ if __name__ == "__main__":
         parser.error("Number of epochs should be a positive integer.")
 
     # Run main function
-    args.debug_run = True  # @XXX
+
     main(args)
 
