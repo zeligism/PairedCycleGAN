@@ -8,10 +8,6 @@ import torchvision.utils as vutils
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 
-EPSILON = 1e-4
-REAL = 1.0 - EPSILON
-FAKE = 0.0 + EPSILON
-
 
 class MakeupNetTrainer:
     """The trainer for MakeupNet."""
@@ -26,7 +22,7 @@ class MakeupNetTrainer:
         optimizer_name="sgd",
         lr=1e-4,
         momentum=0.9,
-        betas=(0.9, 0.999),
+        betas=(0.5, 0.9),
         gan_type="gan",
         D_iters=5,
         clamp=0.01,
@@ -106,20 +102,21 @@ class MakeupNetTrainer:
         # @TODO: Try DistributedDataParallel?
         self.model = self.model.to(self.device)
         if self.device.type == "cuda" and self.num_gpu > 1:
-            self.model = nn.DataParallel(self.model, list(range(self.num_gpu)))
+            self.model = nn.DistributedDataParallel(self.model, list(range(self.num_gpu)))
 
         # Initialize optimizers for generator and discriminator
-        self.D_optim = self.init_optim(self.model.D.parameters())
+        self.D_optim = torch.optim.SGD(self.model.D.parameters(), lr=self.lr)
+        #self.D_optim = self.init_optim(self.model.D.parameters())  # @XXX
         self.G_optim = self.init_optim(self.model.G.parameters())
 
         self.num_epochs = 0  # set in in self.run()
         self.iters = 0  # number of samples processed so far
 
         # Initialize variables used for tracking loss and progress
-        self.D_losses = []
-        self.G_losses = []
+        self.losses = {"D": [-0.], "G": [-0.]}
+        self.evals = {"D_on_real": [-0.], "D_on_fake1": [-0.], "D_on_fake2": [-0.]}
         self.fixed_sample_progress = []
-        self.fixed_noise = torch.randn(64, self.model.num_latent, 1, 1, device=self.device)
+        self.fixed_noise = torch.randn([64, self.model.num_latents], device=self.device)
 
 
     def init_optim(self, params):
@@ -140,7 +137,7 @@ class MakeupNetTrainer:
         elif self.optimizer_name == "sgd":
             optim = torch.optim.SGD(params, lr=self.lr, momentum=self.momentum)
         else:
-            raise ValueError("Optimizer of the name '{}' not recognized".format(self.optimizer_name))
+            raise ValueError("Optimizer '{}' not recognized".format(self.optimizer_name))
 
         return optim
 
@@ -187,25 +184,21 @@ class MakeupNetTrainer:
 
                 # Sample real images
                 real = sample["before"].to(self.device)
-                _real = sample["after"].to(self.device)
+                #_real = sample["after"].to(self.device)
 
                 # Train model on the samples, and get the the discriminator's results
                 classifications = self.train_on(real)
-                _classifications = self.train_on(_real)  # @TODO
-
-                # Calculate index of data point
-                this_batch_size = real.size()[0]
-                index = batch_index * this_batch_size
+                #_classifications = self.train_on(_real)  # @TODO
 
                 # Report training stats
                 if batch_index % self.stats_report_interval == 0:
-                    self.report_training_stats(index, epoch, *classifications)
+                    self.report_training_stats(batch_index, epoch, *classifications)
 
                 # Check generator's progress by recording its output on a fixed input
                 if batch_index % self.progress_check_interval == 0:
                     self.check_progress_of_generator(self.model.G)
 
-                self.iters += this_batch_size
+                self.iters += 1
 
         # Show stats and check progress at the end
         self.report_training_stats(len(self.dataset), self.num_epochs, *classifications)
@@ -262,19 +255,30 @@ class MakeupNetTrainer:
 
         # Calculate latent vector size
         this_batch_size = real.size()[0]
-        latent_size = torch.Size([this_batch_size, self.model.num_latent, 1, 1])
+        latent_size = torch.Size([this_batch_size, self.model.num_latents])
 
         # Sample fake images from a random latent vector
         latent = torch.randn(latent_size, device=self.device)
         fake = self.model.G(latent)
+        # Train discriminator
+        D_loss, D_on_real, D_on_fake1 = self.D_step(real, fake)
 
-        for _ in range(self.D_iters):
-            D_loss, D_on_real, D_on_fake1 = self.D_step(real, fake)
-        G_loss, D_on_fake2 = self.G_step(fake)
+        # Sample latent and fake again
+        latent = torch.randn(latent_size, device=self.device)
+        fake = self.model.G(latent)
+        # Train generator if we trained discriminator D_iters time
+        if (self.iters + 1) % (self.D_iters + 1) == 0:
+          G_loss, D_on_fake2 = self.G_step(fake)
+        else:
+          G_loss = self.losses["G"][-1]
+          D_on_fake2 = self.evals["D_on_fake2"][-1]
 
-        # Record losses
-        self.D_losses.append(D_loss)
-        self.G_losses.append(G_loss)
+        # Record losses and evaluations
+        self.losses["D"].append(D_loss)
+        self.losses["G"].append(G_loss)
+        self.evals["D_on_real"].append(D_on_real)
+        self.evals["D_on_fake1"].append(D_on_fake1)
+        self.evals["D_on_fake2"].append(D_on_fake2)
 
         return D_on_real, D_on_fake1, D_on_fake2
 
@@ -302,9 +306,9 @@ class MakeupNetTrainer:
         D_on_fake = self.model.D(fake.detach())  # don't pass grads to G
 
         if self.gan_type == "gan":
-            # Create real and fake labels
-            real_label = torch.full([batch_size], REAL, device=self.device)
-            fake_label = torch.full([batch_size], FAKE, device=self.device)
+            # Create (noisy) real and fake labels
+            real_label = 0.7 + 0.5 * torch.rand([batch_size], device=self.device)
+            fake_label = 0.2 * torch.rand([batch_size], device=self.device)
             # Calculate binary cross entropy loss
             D_loss_on_real = F.binary_cross_entropy(D_on_real, real_label)
             D_loss_on_fake = F.binary_cross_entropy(D_on_fake, fake_label)
@@ -321,12 +325,16 @@ class MakeupNetTrainer:
             eps = torch.rand(real.size(), device=self.device)
             interpolated = fake + eps * (real - fake)
             D_on_inter = self.model.D(interpolated)
-            # Summing passes the gradients to each batch independently
-            D_grad = torch.autograd.grad(D_on_inter.sum(), interpolated, retain_graph=True)
-            grad_penalty = self.gp_coeff * (D_grad[0].norm() - 1).pow(2)
+            # Calculate gradient of D(x_i) wrt x_i for each batch
+            D_grad = torch.autograd.grad(D_on_inter, interpolated,
+                                         torch.ones_like(D_on_inter), retain_graph=True)
+            # D_grad will be a 1-tuple, as in: (grad,)
+            D_grad_norm = D_grad[0].view([batch_size, -1]).norm(dim=1)
+            grad_penalty = self.gp_coeff * (D_grad_norm - 1).pow(2)
             # Maximize: D(x) - D(x_g) - gp_coeff * (|| grad of D(x_i) wrt x_i || - 1)^2,
             # where x_i <- eps * x + (1 - eps) * x_g, and eps ~ rand(0,1)
             D_loss = -1 * torch.mean(D_on_real - D_on_fake - grad_penalty)
+            #self.evals["gradient_norm"].append(D_grad_norm)  # @TODO
 
         else:
             raise ValueError(f"gan_type {self.gan_type} not supported")
@@ -367,26 +375,60 @@ class MakeupNetTrainer:
         if self.gan_type == "gan":
             # Calculate binary cross entropy loss with a fake binary label
             batch_size = fake.size()[0]
-            fake_label = torch.full([batch_size], FAKE, device=self.device)
+            fake_label = torch.zeros([batch_size], device=self.device)
             # Loss is: -log(D(G(z))), which is equiv. to minimizing log(1-D(G(z)))
             # We use this loss vs. the original one for stability only.
             G_loss = F.binary_cross_entropy(D_on_fake, 1 - fake_label)
 
         elif self.gan_type == "wgan" or self.gan_type == "wgan-gp":
             # Minimize: -D(G(z))
-            G_loss = -D_on_fake.mean()
+            G_loss = (-D_on_fake).mean()
 
         else:
             raise ValueError(f"gan_type {self.gan_type} not supported")
 
         # Calculate gradients and minimize loss
-        G_loss.backward()  # we use -1 to maximize
+        G_loss.backward()
         self.G_optim.step()
 
         return G_loss.item(), D_on_fake.mean().item()
 
 
+    def get_experiment_name(self, delimiter=", "):
+        """
+        Get the name of trainer's training train...
 
+        Args:
+            delimiter: The delimiter between experiment's parameters. Pretty useless.
+        """
+
+        experiment_details = {
+            "name": self.name,
+            "iters": self.iters,
+            "batch_size": self.batch_size,
+            "optim": self.optimizer_name,
+            "lr": self.lr,
+        }
+
+        if self.optimizer_name == "adam":
+            experiment_details["betas"] = self.betas
+        else:
+            experiment_details["momentum"] = self.momentum
+
+        experiment_details["gan"] = self.gan_type
+        experiment_details["D_iters"] = self.D_iters
+
+        if self.gan_type == "wgan":
+            experiment_details["clamp"] = self.clamp
+        else:
+            experiment_details["lambda"] = self.gp_coeff
+
+        timestamp = "[{}]".format(datetime.datetime.now().strftime("%y%m%d-%H%M%S"))
+        experiment = delimiter.join("{}={}".format(k,v) for k,v in experiment_details.items())
+
+        return timestamp + " " + experiment
+
+        
     #################### Reporting and Tracking Methods ####################
 
     def check_progress_of_generator(self, generator):
@@ -399,18 +441,19 @@ class MakeupNetTrainer:
 
         with torch.no_grad():
             fixed_fake = generator(self.fixed_noise).detach().cpu()
+            fixed_fake = fixed_fake * 0.5 + 0.5  # Un-normalize
 
         self.fixed_sample_progress.append(
             vutils.make_grid(fixed_fake, padding=2, normalize=True)
         )
 
 
-    def report_training_stats(self, index, epoch, D_of_x, D_of_G_z1, D_of_G_z2, precision=4):
+    def report_training_stats(self, batch_index, epoch, D_of_x, D_of_G_z1, D_of_G_z2, precision=4):
         """
         Reports/prints the training stats to the console.
 
         Args:
-            index: Index of the current data point.
+            batch_index: Index of the current batch.
             epoch: Current epoch.
             D_of_x: Mean classification of the discriminator on the real images.
             D_of_G_z1: Mean classification of the discriminator on the fake images (D_step).
@@ -428,13 +471,13 @@ class MakeupNetTrainer:
         stats = {
             "epoch": epoch,
             "num_epochs": self.num_epochs,
-            "index": index,
+            "index": batch_index * self.batch_size,
             "len_dataset": len(self.dataset),
-            "D_loss": self.D_losses[-1],
-            "G_loss": self.G_losses[-1],
-            "D_of_x": D_of_x,
-            "D_of_G_z1": D_of_G_z1,
-            "D_of_G_z2": D_of_G_z2,
+            "D_loss": self.losses["D"][-1],
+            "G_loss": self.losses["G"][-1],
+            "D_of_x": self.evals["D_on_real"][-1],
+            "D_of_G_z1": self.evals["D_on_fake1"][-1],
+            "D_of_G_z2": self.evals["D_on_fake2"][-1],
             "p": precision,
         }
 
@@ -484,8 +527,8 @@ class MakeupNetTrainer:
 
         plt.figure(figsize=(10,5))
         plt.title("Generator and Discriminator Loss During Training")
-        plt.plot(self.D_losses, label="D")
-        plt.plot(self.G_losses, label="G")
+        for label, losses in self.losses.items():
+            plt.plot(losses, label=label)
         plt.xlabel("iterations")
         plt.ylabel("loss")
         plt.legend()
@@ -511,39 +554,4 @@ class MakeupNetTrainer:
 
         # Uncomment the following line to show this on a notebook
         # ani.to_jshtml()
-
-
-    def get_experiment_name(self, delimiter=", "):
-        """
-        Get the name of trainer's training train...
-
-        Args:
-            delimiter: The delimiter between experiment's parameters. Pretty useless.
-        """
-
-        experiment_details = {
-            "name": self.name,
-            "iters": self.iters,
-            "batch_size": self.batch_size,
-            "optim": self.optimizer_name,
-            "lr": self.lr,
-        }
-
-        if self.optimizer_name == "adam":
-            experiment_details["betas"] = self.betas
-        else:
-            experiment_details["momentum"] = self.momentum
-
-        experiment_details["gan"] = self.gan_type
-        experiment_details["D_iters"] = self.D_iters
-
-        if self.gan_type == "wgan":
-            experiment_details["clamp"] = self.clamp
-        else:
-            experiment_details["lambda"] = self.gp_coeff
-
-        timestamp = "[{}]".format(datetime.datetime.now().strftime("%y%m%d-%H%M%S"))
-        experiment = delimiter.join("{}={}".format(k,v) for k,v in experiment_details.items())
-
-        return timestamp + " " + experiment
 
