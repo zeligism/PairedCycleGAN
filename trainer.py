@@ -178,8 +178,8 @@ class MakeupNetTrainer:
 
         print("Starting Training Loop...")
         # For each epoch
-        for epoch in range(num_epochs):
-            for batch_index, sample in enumerate(data_loader):
+        for epoch in range(1, num_epochs + 1):
+            for batch_index, sample in enumerate(data_loader, 1):
 
                 # Sample real images
                 real = sample["before"].to(self.device)
@@ -403,7 +403,7 @@ class MakeupNetTrainer:
         """
 
         if not save_results:
-            plot_losses()
+            plot_losses(self.losses)
             return
 
         # Create results directory if it hasn't been created yet

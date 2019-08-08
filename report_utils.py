@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 
 
-def plot_losses(self, losses_dict, filename=None, title="Losses"):
+def plot_losses(losses_dict, filename=None, title="Losses"):
     """
     Plots the losses of the discriminator and the generator.
 
@@ -25,7 +25,7 @@ def plot_losses(self, losses_dict, filename=None, title="Losses"):
     plt.show()
 
 
-def create_progress_animation(self, frames, filename):
+def create_progress_animation(frames, filename):
     """
     Creates a video of the progress of the generator on a fixed latent vector.
 
