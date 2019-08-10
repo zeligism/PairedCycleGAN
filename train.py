@@ -20,6 +20,8 @@ FILE_DIR = os.path.dirname(os.path.realpath(__file__))
 DATASET_DIR = os.path.join(FILE_DIR, "dataset", "data", "processing", "faces")
 
 ### Network parameters ###
+# @TODO in trainer, get gan_type from model.
+GAN_TYPE = "gan"
 NUM_CHANNELS = 3
 NUM_LATENTS = 128
 NUM_FEATURES = 64
@@ -33,16 +35,34 @@ NUM_GPU = 1
 NUM_WORKERS = 2
 BATCH_SIZE = 4
 
-OPTIMIZER_NAME = "adam"
+# Optimizer's hyperparameters are dependent on the type of gan.
+# Make sure you change these accordingly.
+# @TODO: Add separate hyperparams for D and G?
+
+OPTIMIZER_NAME = "sgd"
 LEARNING_RATE = 1e-4
-MOMENTUM = 0.9
-BETAS = (0.5, 0.9)
+MOMENTUM = 0.
+BETAS = (0.9, 0.999)
 
-GAN_TYPE = "gan"
+if GAN_TYPE == "sgd":
+    OPTIMIZER_NAME = "adam"
+    LEARNING_RATE = 1e-4
+
+elif GAN_TYPE == "wgan":
+    OPTIMIZER_NAME = "rmsprop" # or adam
+    LEARNING_RATE = 5e-5
+    BETAS = (0.5, 0.9)
+
+elif GAN_TYPE == "wgan-gp":
+    OPTIMIZER_NAME = "adam"
+    LEARNING_RATE = 1e-4
+    BETAS = (0.0, 0.9)
+
 D_ITERS = 5
-CLAMP = (-0.01, 0.01)
-GRADIENT_PENALTY_COEFF = 10.
+CLAMP = (-0.01, 0.01)  # for WGAN
+GRADIENT_PENALTY_COEFF = 10.  # for WGAN-GP
 
+# Checkpoints frequency
 STATS_REPORT_INTERVAL = 50
 PROGRESS_CHECK_INTERVAL = 200
 
@@ -82,6 +102,7 @@ def main(args):
         "num_channels": args.num_channels,
         "num_latents": args.num_latents,
         "num_features": args.num_features,
+        "gan_type": args.gan_type,
         "with_landmarks": args.with_landmarks,
     }
 
