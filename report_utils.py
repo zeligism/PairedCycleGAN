@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 
 
-def plot_losses(losses_dict, filename=None, title="Losses"):
+def plot_lines(losses_dict, filename=None, title=""):
     """
     Plots the losses of the discriminator and the generator.
 
@@ -16,7 +16,6 @@ def plot_losses(losses_dict, filename=None, title="Losses"):
     for label, losses in losses_dict.items():
         plt.plot(losses, label=label)
     plt.xlabel("t")
-    plt.ylabel("loss")
     plt.legend()
     
     if filename is not None:
