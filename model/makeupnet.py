@@ -16,7 +16,7 @@ class MakeupNet(nn.Module):
         depth=5,
         conv_std=0.02,
         batchnorm_std=0.02,
-        with_landmarks=False,):
+        with_landmarks=False):
         """
         Initializes MakeupNet. @TODO
 
