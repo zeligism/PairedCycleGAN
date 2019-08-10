@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.utils as vutils
 
-from report_utils import plot_losses, create_progress_animation
+from report_utils import plot_lines, create_progress_animation
 
 
 class MakeupNetTrainer:
@@ -92,14 +92,14 @@ class MakeupNetTrainer:
             self.model = nn.DistributedDataParallel(self.model, list(range(self.num_gpu)))
 
         # Initialize optimizers for generator and discriminator
-        self.D_optim = torch.optim.SGD(self.model.D.parameters(), lr=self.lr)
-        #self.D_optim = self.init_optim(self.model.D.parameters())  # @XXX
+        self.D_optim = self.init_optim(self.model.D.parameters())
         self.G_optim = self.init_optim(self.model.G.parameters())
 
         # Initialize variables used for tracking loss and progress
         self.iters = 1  # current iteration
         self.losses = {"D": [-0.], "G": [-0.]}
         self.evals = {"D_on_real": [-0.], "D_on_fake1": [-0.], "D_on_fake2": [-0.]}
+        self.grad_norms = []
         self.progress_frames = []
         self.fixed_latent = torch.randn([64, self.model.num_latents], device=self.device)
 
@@ -118,7 +118,7 @@ class MakeupNetTrainer:
         if self.optimizer_name == "adam":
             optim = torch.optim.Adam(params, lr=self.lr, betas=self.betas)
         elif self.optimizer_name == "rmsprop":
-            optim = torch.optim.RMSprop(params, lr=self.lr, momentum=self.momentum)
+            optim = torch.optim.RMSprop(params, lr=self.lr)
         elif self.optimizer_name == "sgd":
             optim = torch.optim.SGD(params, lr=self.lr, momentum=self.momentum)
         else:
@@ -192,7 +192,7 @@ class MakeupNetTrainer:
                     self.report_training_stats(batch_index, num_batches, epoch, num_epochs)
 
                 # Check generator's progress by recording its output on a fixed input
-                if batch_index % self.progress_check_interval == 0:
+                if self.iters % self.progress_check_interval == 0:
                     self.check_progress_of_generator()
 
                 self.iters += 1
@@ -250,6 +250,8 @@ class MakeupNetTrainer:
             The result of the discriminator's classifications on real and fake data.
         """
 
+        real += 1e-3 * torch.randn_like(real)  # @XXX
+
         # Calculate latent vector size
         this_batch_size = real.size()[0]
         latent_size = torch.Size([this_batch_size, self.model.num_latents])
@@ -305,14 +307,14 @@ class MakeupNetTrainer:
 
         if self.gan_type == "gan":
             # Create (noisy) real and fake labels
-            real_label = 0.7 + 0.5 * torch.rand([batch_size], device=self.device)
-            fake_label = 0.2 * torch.rand([batch_size], device=self.device)
+            real_label = 0.8 + 0.2 * torch.rand([batch_size], device=self.device)
+            fake_label = 0.05 * torch.rand([batch_size], device=self.device)
             # Calculate binary cross entropy loss
-            D_loss_on_real = F.binary_cross_entropy(D_on_real, real_label)
-            D_loss_on_fake = F.binary_cross_entropy(D_on_fake, fake_label)
+            D_loss_on_real = F.binary_cross_entropy_with_logits(D_on_real, real_label)
+            D_loss_on_fake = F.binary_cross_entropy_with_logits(D_on_fake, fake_label)
             # Loss is: - log(D(x)) - log(1 - D(x_g)),
             # which is equiv. to maximizing: log(D(x)) + log(1 - D(x_g))
-            D_loss = D_loss_on_real + D_loss_on_fake
+            D_loss = torch.mean(D_loss_on_real + D_loss_on_fake)
 
         elif self.gan_type == "wgan":
             # Maximize: D(x) - D(x_g), i.e. minimize -(D(x) - D(x_g))
@@ -321,7 +323,8 @@ class MakeupNetTrainer:
         elif self.gan_type == "wgan-gp":
             # Calculate gradient penalty
             eps = torch.rand(real.size(), device=self.device)
-            interpolated = fake + eps * (real - fake)
+            interpolated = (1 - eps) * fake.detach() + eps * real
+            interpolated.requires_grad_()
             D_on_inter = self.model.D(interpolated)
             # Calculate gradient of D(x_i) wrt x_i for each batch
             D_grad = torch.autograd.grad(D_on_inter, interpolated,
@@ -332,15 +335,15 @@ class MakeupNetTrainer:
             # Maximize: D(x) - D(x_g) - gp_coeff * (|| grad of D(x_i) wrt x_i || - 1)^2,
             # where x_i <- eps * x + (1 - eps) * x_g, and eps ~ rand(0,1)
             D_loss = -1 * torch.mean(D_on_real - D_on_fake - grad_penalty)
-            #self.evals["gradient_norm"].append(D_grad_norm)  # @TODO
+            self.grad_norms.append(D_grad_norm.mean().item())
 
         else:
             raise ValueError(f"gan_type {self.gan_type} not supported")
-            
+
         # Calculate gradients and minimize loss
         D_loss.backward()
         self.D_optim.step()
-        
+
         # If WGAN, clamp D's weights to ensure k-Lipschitzness
         if self.gan_type == "wgan":
             [p.data.clamp_(*self.clamp) for p in self.model.D.parameters()]
@@ -376,7 +379,7 @@ class MakeupNetTrainer:
             fake_label = torch.zeros([batch_size], device=self.device)
             # Loss is: -log(D(G(z))), which is equiv. to minimizing log(1-D(G(z)))
             # We use this loss vs. the original one for stability only.
-            G_loss = F.binary_cross_entropy(D_on_fake, 1 - fake_label)
+            G_loss = F.binary_cross_entropy_with_logits(D_on_fake, 1 - fake_label)
 
         elif self.gan_type == "wgan" or self.gan_type == "wgan-gp":
             # Minimize: -D(G(z))
@@ -403,7 +406,8 @@ class MakeupNetTrainer:
         """
 
         if not save_results:
-            plot_losses(self.losses)
+            plot_lines(self.losses, title="Losses")
+            plot_lines(self.evals, title="Evals")
             return
 
         # Create results directory if it hasn't been created yet
@@ -418,8 +422,12 @@ class MakeupNetTrainer:
         self.save_model(model_path)
 
         # Plot losses of D and G
-        plot_file = os.path.join(experiment_dir, "losses.png")
-        plot_losses(self.losses, plot_file)
+        losses_file = os.path.join(experiment_dir, "losses.png")
+        plot_lines(self.losses, losses_file, title="Losses of D and G")
+
+        # Plot evals of D on real and fake data
+        evals_file = os.path.join(experiment_dir, "evals.png")
+        plot_lines(self.evals, evals_file, title="Evaluations of D on real and fake data")
 
         # Create an animation of the generator's progress
         animation_file = os.path.join(experiment_dir, "progress.mp4")
@@ -482,25 +490,27 @@ class MakeupNetTrainer:
             delimiter: The delimiter between experiment's parameters. Pretty useless.
         """
 
-        experiment_details = {
-            "name": self.name,
-            "iters": self.iters,
-            "batch_size": self.batch_size,
-            "optim": self.optimizer_name,
-            "lr": self.lr,
-        }
+        experiment_details = {}
 
+        # Train hyperparameters
+        experiment_details["name"] = self.name
+        experiment_details["iters"] = self.iters - 1
+        experiment_details["batch_size"] = self.batch_size
+
+        # Optimizer's hyperparameters
+        experiment_details["optimizer_name"] = self.optimizer_name
+        experiment_details["lr"] = self.lr
         if self.optimizer_name == "adam":
             experiment_details["betas"] = self.betas
         else:
             experiment_details["momentum"] = self.momentum
 
+        # GAN's hyperparameters
         experiment_details["gan"] = self.gan_type
         experiment_details["D_iters"] = self.D_iters
-
         if self.gan_type == "wgan":
             experiment_details["clamp"] = self.clamp
-        else:
+        if self.gan_type == "wgan-gp":
             experiment_details["lambda"] = self.gp_coeff
 
         timestamp = "[{}]".format(datetime.datetime.now().strftime("%y%m%d-%H%M%S"))
