@@ -26,11 +26,17 @@ class MakeupNet(nn.Module):
         self.num_channels = num_channels
         self.num_features = num_features
         self.num_latents = num_latents
-        self.with_landmarks = with_landmarks
         self.conv_std = conv_std
         self.batchnorm_std = batchnorm_std
+        self.depth = depth
+        self.gan_type = gan_type
+        self.with_landmarks = with_landmarks
 
-        self.D = Discriminator(num_channels=num_channels, num_features=num_features)
+        # @TODO: put this in D, pass gan_type instead
+        using_gradient_penalty = gan_type == "wgan-gp"
+        use_batchnorm = not using_gradient_penalty
+
+        self.D = Discriminator(num_channels=num_channels, num_features=num_features, use_batchnorm=use_batchnorm)
         self.G = Generator(num_latents=num_latents, num_features=num_features, num_channels=num_channels)
         self.weights_init(conv_std=0.02, batchnorm_std=0.02)
 

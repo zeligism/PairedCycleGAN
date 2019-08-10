@@ -5,12 +5,8 @@ import torch.nn as nn
 class Discriminator(nn.Module):
     """The discriminator of the MakeupNet"""
 
-    def __init__(self, num_channels, num_features,
-                 depth=5, gan_type="gan", with_landmarks=False):
+    def __init__(self, num_channels, num_features, depth=5, use_batchnorm=True):
         super().__init__()
-
-        using_gradient_penalty = gan_type == "wgan-gp"
-        use_batchnorm = not using_gradient_penalty
 
         # input is num_channels x H x W
         self.main = nn.Sequential(
@@ -21,9 +17,6 @@ class Discriminator(nn.Module):
             nn.Conv2d(num_features * 8, 1,
                       kernel_size=4, stride=1, padding=0, bias=False),
         )
-
-        if gan_type == "gan":
-            self.main.add_module("DiscriminatorSigmoid", nn.Sigmoid())
 
 
     def forward(self, inputs):
@@ -56,8 +49,7 @@ class DiscriminatorBlock(nn.Module):
 class Generator(nn.Module):
     """The generator of the MakeupNet"""
 
-    def __init__(self, num_latents, num_features, num_channels,
-                 depth=5, gan_type="gan", with_landmarks=False):
+    def __init__(self, num_latents, num_features, num_channels, depth=5):
         super().__init__()
 
         self.main = nn.Sequential(
@@ -90,7 +82,6 @@ class GeneratorBlock(nn.Module):
             nn.ConvTranspose2d(in_channels, out_channels, kernel_size=4,
                                stride=stride, padding=padding, bias=False),
             nn.BatchNorm2d(out_channels),
-            nn.Dropout(),
             nn.LeakyReLU(0.2, inplace=True),
         )
 
