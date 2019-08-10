@@ -7,37 +7,51 @@ from .gan import Discriminator, Generator
 class MakeupNet(nn.Module):
     """The main module of the MakeupNet"""
 
-    def __init__(self, name="MakeupNet",
-        num_channels=3, num_features=64, num_latents=128,
-        conv_std=0.02, batchnorm_std=0.02,
-        depth=5, gan_type="gan", with_landmarks=False):
+    def __init__(self,
+        name="MakeupNet",
+        gan_type="gan",
+        num_channels=3,
+        num_features=64,
+        num_latents=128,
+        depth=5,
+        conv_std=0.02,
+        batchnorm_std=0.02,
+        with_landmarks=False,):
         """
-        Initializes MakeupNet.
+        Initializes MakeupNet. @TODO
 
         Args:
             num_channels: the number of channels in the input images.
             num_features: controls the numbers of filters in each conv/up-conv layer.
             num_latents: the number of latent factors.
-            ... @TODO
         """
         super().__init__()
 
         self.name = name
+        self.gan_type = gan_type
         self.num_channels = num_channels
         self.num_features = num_features
         self.num_latents = num_latents
+        self.depth = depth
         self.conv_std = conv_std
         self.batchnorm_std = batchnorm_std
-        self.depth = depth
-        self.gan_type = gan_type
         self.with_landmarks = with_landmarks
 
-        # @TODO: put this in D, pass gan_type instead
-        using_gradient_penalty = gan_type == "wgan-gp"
-        use_batchnorm = not using_gradient_penalty
+        D_params = {
+            "gan_type": gan_type,
+            "num_channels": num_channels,
+            "num_features": num_features,
+        }
+        G_params = {
+            "gan_type": gan_type,
+            "num_latents": num_latents,
+            "num_features": num_features,
+            "num_channels": num_channels,
+        }
 
-        self.D = Discriminator(num_channels=num_channels, num_features=num_features, use_batchnorm=use_batchnorm)
-        self.G = Generator(num_latents=num_latents, num_features=num_features, num_channels=num_channels)
+        self.D = Discriminator(**D_params)
+        self.G = Generator(**G_params)
+
         self.weights_init(conv_std=0.02, batchnorm_std=0.02)
 
 

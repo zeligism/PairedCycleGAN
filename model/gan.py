@@ -5,8 +5,11 @@ import torch.nn as nn
 class Discriminator(nn.Module):
     """The discriminator of the MakeupNet"""
 
-    def __init__(self, num_channels, num_features, depth=5, use_batchnorm=True):
+    def __init__(self, gan_type, num_channels, num_features, depth=5):
         super().__init__()
+
+        using_gradient_penalty = gan_type == "wgan-gp"
+        use_batchnorm = not using_gradient_penalty
 
         # input is num_channels x H x W
         self.main = nn.Sequential(
@@ -17,6 +20,9 @@ class Discriminator(nn.Module):
             nn.Conv2d(num_features * 8, 1,
                       kernel_size=4, stride=1, padding=0, bias=False),
         )
+
+        if gan_type == "gan":
+            self.main.add_module("D-Sigmoid", nn.Sigmoid())
 
 
     def forward(self, inputs):
@@ -36,7 +42,8 @@ class DiscriminatorBlock(nn.Module):
         modules = []
 
         modules.append(nn.Conv2d(in_channels, out_channels, 4, stride=2, padding=1, bias=False))
-        if use_batchnorm: modules.append(nn.BatchNorm2d(out_channels))
+        if use_batchnorm:
+            modules.append(nn.BatchNorm2d(out_channels))
         modules.append(nn.LeakyReLU(0.2, inplace=True))
         
         self.main = nn.Sequential(*modules)
@@ -49,8 +56,10 @@ class DiscriminatorBlock(nn.Module):
 class Generator(nn.Module):
     """The generator of the MakeupNet"""
 
-    def __init__(self, num_latents, num_features, num_channels, depth=5):
+    def __init__(self, gan_type, num_latents, num_features, num_channels, depth=5):
         super().__init__()
+
+        # @XXX: is gan_type useless here?
 
         self.main = nn.Sequential(
             GeneratorBlock(num_latents, num_features * 8, stride=1, padding=0),

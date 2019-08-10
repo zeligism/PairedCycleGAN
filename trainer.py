@@ -23,7 +23,6 @@ class MakeupNetTrainer:
         lr=1e-4,
         momentum=0.9,
         betas=(0.5, 0.9),
-        gan_type="gan",
         D_iters=5,
         clamp=0.01,
         gp_coeff=10.0,
@@ -45,7 +44,6 @@ class MakeupNetTrainer:
             lr: The learning rate of the optimizer.
             momentum: The momentum of used in the optimizer, if applicable.
             betas: The betas used in the Adam optimizer.
-            gan_type: Type of GAN to train. Choices = {gan, wgan, wgan-gp}
             D_iters: Number of iterations to train discriminator every batch.
             clamp: Set to None if you don't want to clamp discriminator's weight after each update.
             gp_coeff: A coefficient for the gradient penalty (gp) of the discriminator.
@@ -59,7 +57,7 @@ class MakeupNetTrainer:
 
         self.name = name
         self.results_dir = results_dir
-        #self.load_model_path = load_model_path
+        self.load_model_path = load_model_path
         
         self.num_gpu = num_gpu
         self.num_workers = num_workers
@@ -70,7 +68,6 @@ class MakeupNetTrainer:
         self.momentum = momentum
         self.betas = betas
 
-        self.gan_type = gan_type
         self.D_iters = D_iters
         self.clamp = clamp
         self.gp_coeff = gp_coeff
@@ -305,22 +302,22 @@ class MakeupNetTrainer:
         D_on_real = self.model.D(real)
         D_on_fake = self.model.D(fake.detach())  # don't pass grads to G
 
-        if self.gan_type == "gan":
+        if self.model.gan_type == "gan":
             # Create (noisy) real and fake labels
             real_label = 0.8 + 0.2 * torch.rand([batch_size], device=self.device)
             fake_label = 0.05 * torch.rand([batch_size], device=self.device)
             # Calculate binary cross entropy loss
-            D_loss_on_real = F.binary_cross_entropy_with_logits(D_on_real, real_label)
-            D_loss_on_fake = F.binary_cross_entropy_with_logits(D_on_fake, fake_label)
+            D_loss_on_real = F.binary_cross_entropy(D_on_real, real_label)
+            D_loss_on_fake = F.binary_cross_entropy(D_on_fake, fake_label)
             # Loss is: - log(D(x)) - log(1 - D(x_g)),
             # which is equiv. to maximizing: log(D(x)) + log(1 - D(x_g))
             D_loss = torch.mean(D_loss_on_real + D_loss_on_fake)
 
-        elif self.gan_type == "wgan":
+        elif self.model.gan_type == "wgan":
             # Maximize: D(x) - D(x_g), i.e. minimize -(D(x) - D(x_g))
             D_loss = -1 * torch.mean(D_on_real - D_on_fake)
 
-        elif self.gan_type == "wgan-gp":
+        elif self.model.gan_type == "wgan-gp":
             # Calculate gradient penalty
             eps = torch.rand(real.size(), device=self.device)
             interpolated = (1 - eps) * fake.detach() + eps * real
@@ -338,14 +335,14 @@ class MakeupNetTrainer:
             self.grad_norms.append(D_grad_norm.mean().item())
 
         else:
-            raise ValueError(f"gan_type {self.gan_type} not supported")
+            raise ValueError(f"gan_type {self.model.gan_type} not supported")
 
         # Calculate gradients and minimize loss
         D_loss.backward()
         self.D_optim.step()
 
         # If WGAN, clamp D's weights to ensure k-Lipschitzness
-        if self.gan_type == "wgan":
+        if self.model.gan_type == "wgan":
             [p.data.clamp_(*self.clamp) for p in self.model.D.parameters()]
 
         return (
@@ -373,20 +370,20 @@ class MakeupNetTrainer:
         # Classify fake images
         D_on_fake = self.model.D(fake)
 
-        if self.gan_type == "gan":
+        if self.model.gan_type == "gan":
             # Calculate binary cross entropy loss with a fake binary label
             batch_size = fake.size()[0]
             fake_label = torch.zeros([batch_size], device=self.device)
             # Loss is: -log(D(G(z))), which is equiv. to minimizing log(1-D(G(z)))
             # We use this loss vs. the original one for stability only.
-            G_loss = F.binary_cross_entropy_with_logits(D_on_fake, 1 - fake_label)
+            G_loss = F.binary_cross_entropy(D_on_fake, 1 - fake_label)
 
-        elif self.gan_type == "wgan" or self.gan_type == "wgan-gp":
+        elif self.model.gan_type == "wgan" or self.model.gan_type == "wgan-gp":
             # Minimize: -D(G(z))
             G_loss = (-D_on_fake).mean()
 
         else:
-            raise ValueError(f"gan_type {self.gan_type} not supported")
+            raise ValueError(f"gan_type {self.model.gan_type} not supported")
 
         # Calculate gradients and minimize loss
         G_loss.backward()
@@ -506,11 +503,11 @@ class MakeupNetTrainer:
             experiment_details["momentum"] = self.momentum
 
         # GAN's hyperparameters
-        experiment_details["gan"] = self.gan_type
+        experiment_details["gan"] = self.model.gan_type
         experiment_details["D_iters"] = self.D_iters
-        if self.gan_type == "wgan":
+        if self.model.gan_type == "wgan":
             experiment_details["clamp"] = self.clamp
-        if self.gan_type == "wgan-gp":
+        if self.model.gan_type == "wgan-gp":
             experiment_details["lambda"] = self.gp_coeff
 
         timestamp = "[{}]".format(datetime.datetime.now().strftime("%y%m%d-%H%M%S"))

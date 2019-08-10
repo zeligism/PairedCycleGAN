@@ -20,7 +20,6 @@ FILE_DIR = os.path.dirname(os.path.realpath(__file__))
 DATASET_DIR = os.path.join(FILE_DIR, "dataset", "data", "processing", "faces")
 
 ### Network parameters ###
-# @TODO in trainer, get gan_type from model.
 GAN_TYPE = "gan"
 NUM_CHANNELS = 3
 NUM_LATENTS = 128
@@ -99,10 +98,10 @@ def main(args):
 
     # Define model parameters
     model_params = {
+        "gan_type": args.gan_type,
         "num_channels": args.num_channels,
         "num_latents": args.num_latents,
         "num_features": args.num_features,
-        "gan_type": args.gan_type,
         "with_landmarks": args.with_landmarks,
     }
 
@@ -118,7 +117,6 @@ def main(args):
         "lr": args.learning_rate,
         "momentum": args.momentum,
         "betas": tuple(args.betas),
-        "gan_type": args.gan_type,
         "D_iters": args.D_iters,
         "clamp": tuple(args.clamp),
         "gp_coeff": args.gp_coeff,
@@ -149,6 +147,9 @@ if __name__ == "__main__":
         help="use faces landmarks in training as well.")
     
     ### Model ###
+    parser.add_argument("--gan_type", type=str.lower, default=GAN_TYPE,
+        choices=("gan", "wgan", "wgan-gp"),
+        help="type of gan among GAN (default), WGAN (Wasserstein GAN), and WGAN-GP (WGAN with gradient penalty).")
     parser.add_argument("--num_channels", type=int, default=NUM_CHANNELS,
         help="number of image channels in the dataset.")
     parser.add_argument("--num_latents", type=int, default=NUM_LATENTS,
@@ -181,9 +182,6 @@ if __name__ == "__main__":
     parser.add_argument("--betas", type=float, nargs=2, default=BETAS,
         help="used in Adam optimizer (see torch.optim.Adam for details).")
 
-    parser.add_argument("--gan_type", type=str.lower, default=GAN_TYPE,
-        choices=("gan", "wgan", "wgan-gp"),
-        help="type of gan among GAN (default), WGAN (Wasserstein GAN), and WGAN-GP (WGAN with gradient penalty).")
     parser.add_argument("--D_iters", type=int, default=D_ITERS,
         help="number of iterations to train discriminator every batch.")
     parser.add_argument("--clamp", type=float, nargs=2, default=CLAMP,
