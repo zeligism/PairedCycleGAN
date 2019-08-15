@@ -27,7 +27,8 @@ class MakeupNetTrainer:
         clamp=0.01,
         gp_coeff=10.0,
         stats_report_interval=50,
-        progress_check_interval=200):
+        progress_check_interval=200,
+        description="no description given"):
         """
         Initializes MakeupNetTrainer.
 
@@ -49,6 +50,7 @@ class MakeupNetTrainer:
             gp_coeff: A coefficient for the gradient penalty (gp) of the discriminator.
             stats_report_interval: Report stats every `stats_report_interval` batch.
             progress_check_interval: Check progress every `progress_check_interval` batch.
+            description: Description of the experiment the trainer is running.
         """
 
         # Initialize given parameters
@@ -74,6 +76,8 @@ class MakeupNetTrainer:
 
         self.stats_report_interval = stats_report_interval
         self.progress_check_interval = progress_check_interval
+
+        self.description = description
 
         # Load model if necessary
         if load_model_path is not None:
@@ -432,6 +436,11 @@ class MakeupNetTrainer:
         animation_file = os.path.join(experiment_dir, "progress.mp4")
         create_progress_animation(self.progress_frames, animation_file)
 
+        # Write description file of experiment
+        description_txt = os.path.join(experiment_dir, "description.txt")
+        with open(description_txt, "w") as f:
+            f.write(self.description)
+
 
     def check_progress_of_generator(self):
         """
@@ -512,8 +521,8 @@ class MakeupNetTrainer:
         if self.model.gan_type == "wgan-gp":
             experiment_details["lambda"] = self.gp_coeff
 
-        timestamp = "[{}]".format(datetime.datetime.now().strftime("%y%m%d-%H%M%S"))
+        timestamp = datetime.datetime.now().strftime("%y%m%d-%H%M%S")
         experiment = delimiter.join("{}={}".format(k,v) for k,v in experiment_details.items())
 
-        return timestamp + " " + experiment
+        return "[{}] {}".format(timestamp, experiment)
 

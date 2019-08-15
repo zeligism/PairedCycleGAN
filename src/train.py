@@ -9,8 +9,10 @@ from dataset.transforms import MakeupSampleTransform
 from model.makeupnet import MakeupNet
 from trainer import MakeupNetTrainer
 
+# @TODO: add logging
+# @TODO: put hyperparams in yaml
 
-### DEFAULT PARAMETERS ###
+### DEFAULT HYPERPARAMETERS ###
 
 # Random seed
 RANDOM_SEED = 123
