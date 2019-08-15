@@ -2,10 +2,76 @@
 import torch.nn as nn
 
 
-class Discriminator(nn.Module):
+class DCGAN(nn.Module):
+    """Deep Convolutional Generative Adversarial Network"""
+
+    def __init__(self,
+        gan_type="gan",
+        num_channels=3,
+        num_features=64,
+        num_latents=128,
+        conv_std=0.02,
+        batchnorm_std=0.02,
+        with_landmarks=False):
+        """
+        Initializes DCGAN.
+
+        Args: @TODO
+            num_channels: the number of channels in the input images.
+            num_features: controls the numbers of filters in each conv/up-conv layer.
+            num_latents: the number of latent factors.
+        """
+        super().__init__()
+
+        self.gan_type = gan_type
+        self.num_channels = num_channels
+        self.num_features = num_features
+        self.num_latents = num_latents
+        self.conv_std = conv_std
+        self.batchnorm_std = batchnorm_std
+        self.with_landmarks = with_landmarks
+
+        D_params = {
+            "gan_type": gan_type,
+            "num_channels": num_channels,
+            "num_features": num_features,
+        }
+        G_params = {
+            "gan_type": gan_type,
+            "num_latents": num_latents,
+            "num_features": num_features,
+            "num_channels": num_channels,
+        }
+
+        self.D = DCGAN_Discriminator(**D_params)
+        self.G = DCGAN_Generator(**G_params)
+
+        self.weights_init(conv_std=0.02, batchnorm_std=0.02)
+
+
+    def weights_init(self, conv_std=0.02, batchnorm_std=0.02):
+        """
+        A method that initializes weights of `self` in-place.
+
+        Args:
+            conv_std: the standard deviation of the conv/up-conv layers.
+            batchnorm_std: the standard deviation of the batch-norm layers.
+        """
+        def weights_init_apply(module):
+            classname = module.__class__.__name__
+            if classname.find('Conv') != -1:
+                nn.init.normal_(module.weight.data, 0.0, conv_std)
+            elif classname.find('BatchNorm') != -1:
+                nn.init.normal_(module.weight.data, 1.0, batchnorm_std)
+                nn.init.constant_(module.bias.data, 0)
+
+        self.apply(weights_init_apply)
+
+
+class DCGAN_Discriminator(nn.Module):
     """The discriminator of the MakeupNet"""
 
-    def __init__(self, gan_type, num_channels, num_features, depth=5):
+    def __init__(self, gan_type, num_channels, num_features):
         super().__init__()
 
         using_gradient_penalty = gan_type == "wgan-gp"
@@ -13,10 +79,10 @@ class Discriminator(nn.Module):
 
         # input is num_channels x H x W
         self.main = nn.Sequential(
-            DiscriminatorBlock(num_channels, num_features),
-            DiscriminatorBlock(num_features * 1, num_features * 2, use_batchnorm=use_batchnorm),
-            DiscriminatorBlock(num_features * 2, num_features * 4, use_batchnorm=use_batchnorm),
-            DiscriminatorBlock(num_features * 4, num_features * 8, use_batchnorm=use_batchnorm),
+            DCGAN_DiscriminatorBlock(num_channels, num_features),
+            DCGAN_DiscriminatorBlock(num_features * 1, num_features * 2, use_batchnorm=use_batchnorm),
+            DCGAN_DiscriminatorBlock(num_features * 2, num_features * 4, use_batchnorm=use_batchnorm),
+            DCGAN_DiscriminatorBlock(num_features * 4, num_features * 8, use_batchnorm=use_batchnorm),
             nn.Conv2d(num_features * 8, 1,
                       kernel_size=4, stride=1, padding=0, bias=False),
         )
@@ -29,7 +95,7 @@ class Discriminator(nn.Module):
         return self.main(inputs).view(-1)
 
 
-class DiscriminatorBlock(nn.Module):
+class DCGAN_DiscriminatorBlock(nn.Module):
     """
     A discriminator convolutional block.
     Default stride and padding half the size of features,
@@ -53,19 +119,19 @@ class DiscriminatorBlock(nn.Module):
         return self.main(x)
 
 
-class Generator(nn.Module):
+class DCGAN_Generator(nn.Module):
     """The generator of the MakeupNet"""
 
-    def __init__(self, gan_type, num_latents, num_features, num_channels, depth=5):
+    def __init__(self, gan_type, num_latents, num_features, num_channels):
         super().__init__()
 
         # @XXX: is gan_type useless here?
 
         self.main = nn.Sequential(
-            GeneratorBlock(num_latents, num_features * 8, stride=1, padding=0),
-            GeneratorBlock(num_features * 8, num_features * 4),
-            GeneratorBlock(num_features * 4, num_features * 2),
-            GeneratorBlock(num_features * 2, num_features * 1),
+            DCGAN_GeneratorBlock(num_latents, num_features * 8, stride=1, padding=0),
+            DCGAN_GeneratorBlock(num_features * 8, num_features * 4),
+            DCGAN_GeneratorBlock(num_features * 4, num_features * 2),
+            DCGAN_GeneratorBlock(num_features * 2, num_features * 1),
             nn.ConvTranspose2d(num_features, num_channels,
                                kernel_size=4, stride=2, padding=1, bias=False),
             nn.Tanh(),
@@ -77,7 +143,7 @@ class Generator(nn.Module):
         return self.main(inputs)
 
 
-class GeneratorBlock(nn.Module):
+class DCGAN_GeneratorBlock(nn.Module):
     """
     A generator convolutional block.
     Default stride and padding double the size of features,
