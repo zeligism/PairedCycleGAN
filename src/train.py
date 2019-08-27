@@ -7,7 +7,7 @@ import torchvision.transforms as transforms
 from dataset.dataset import MakeupDataset
 from dataset.transforms import MakeupSampleTransform
 from model.makeupnet import MakeupNet
-from trainer import MakeupNetTrainer
+from trainers.makeupnet_trainer import MakeupNetTrainer
 
 # @TODO: add logging
 # @TODO: put hyperparams in yaml

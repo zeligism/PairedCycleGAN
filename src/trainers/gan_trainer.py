@@ -6,11 +6,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.utils as vutils
 
-from report_utils import plot_lines, create_progress_animation
+from .report_utils import plot_lines, create_progress_animation
 
 
-class MakeupNetTrainer:
-    """The trainer for MakeupNet."""
+class GAN_Trainer:
+    """A trainer for a GAN."""
 
     def __init__(self, model, dataset,
         name="trainer",
@@ -30,7 +30,7 @@ class MakeupNetTrainer:
         progress_check_interval=200,
         description="no description given"):
         """
-        Initializes MakeupNetTrainer.
+        Initializes GAN_Trainer.
 
         Args:
             model: The makeup net.
