@@ -83,8 +83,7 @@ class DCGAN_Discriminator(nn.Module):
             DCGAN_DiscriminatorBlock(num_features * 1, num_features * 2, use_batchnorm=use_batchnorm),
             DCGAN_DiscriminatorBlock(num_features * 2, num_features * 4, use_batchnorm=use_batchnorm),
             DCGAN_DiscriminatorBlock(num_features * 4, num_features * 8, use_batchnorm=use_batchnorm),
-            nn.Conv2d(num_features * 8, 1,
-                      kernel_size=4, stride=1, padding=0, bias=False),
+            nn.Conv2d(num_features * 8, 1, 4, stride=1, padding=0, bias=False),
         )
 
         if gan_type == "gan":
@@ -107,11 +106,10 @@ class DCGAN_DiscriminatorBlock(nn.Module):
 
         modules = []
 
-        modules.append(nn.Conv2d(in_channels, out_channels, 4, stride=2, padding=1, bias=False))
-        if use_batchnorm:
-            modules.append(nn.BatchNorm2d(out_channels))
-        modules.append(nn.LeakyReLU(0.2, inplace=True))
-        
+        modules += [nn.Conv2d(in_channels, out_channels, 4, stride=2, padding=1, bias=False)]
+        modules += [nn.BatchNorm2d(out_channels)] if use_batchnorm else []
+        modules += [nn.LeakyReLU(0.2, inplace=True)]
+
         self.main = nn.Sequential(*modules)
 
 
@@ -132,8 +130,8 @@ class DCGAN_Generator(nn.Module):
             DCGAN_GeneratorBlock(num_features * 8, num_features * 4),
             DCGAN_GeneratorBlock(num_features * 4, num_features * 2),
             DCGAN_GeneratorBlock(num_features * 2, num_features * 1),
-            nn.ConvTranspose2d(num_features, num_channels,
-                               kernel_size=4, stride=2, padding=1, bias=False),
+            nn.ConvTranspose2d(num_features, num_channels, 4,
+                               stride=2, padding=1, bias=False),
             nn.Tanh(),
         )
 
@@ -154,7 +152,7 @@ class DCGAN_GeneratorBlock(nn.Module):
         super().__init__()
 
         self.main = nn.Sequential(
-            nn.ConvTranspose2d(in_channels, out_channels, kernel_size=4,
+            nn.ConvTranspose2d(in_channels, out_channels, 4,
                                stride=stride, padding=padding, bias=False),
             nn.BatchNorm2d(out_channels),
             nn.LeakyReLU(0.2, inplace=True),
