@@ -1,6 +1,7 @@
 
 import torch.nn as nn
 
+from .init_utils import create_weights_init
 
 class DCGAN(nn.Module):
     """Deep Convolutional Generative Adversarial Network"""
@@ -46,26 +47,8 @@ class DCGAN(nn.Module):
         self.D = DCGAN_Discriminator(**D_params)
         self.G = DCGAN_Generator(**G_params)
 
-        self.weights_init(conv_std=0.02, batchnorm_std=0.02)
-
-
-    def weights_init(self, conv_std=0.02, batchnorm_std=0.02):
-        """
-        A method that initializes weights of `self` in-place.
-
-        Args:
-            conv_std: the standard deviation of the conv/up-conv layers.
-            batchnorm_std: the standard deviation of the batch-norm layers.
-        """
-        def weights_init_apply(module):
-            classname = module.__class__.__name__
-            if classname.find('Conv') != -1:
-                nn.init.normal_(module.weight.data, 0.0, conv_std)
-            elif classname.find('BatchNorm') != -1:
-                nn.init.normal_(module.weight.data, 1.0, batchnorm_std)
-                nn.init.constant_(module.bias.data, 0)
-
-        self.apply(weights_init_apply)
+        weights_init = create_weights_init()
+        self.apply(weights_init)
 
 
 class DCGAN_Discriminator(nn.Module):
