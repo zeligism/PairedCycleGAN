@@ -1,6 +1,7 @@
 
 import torch.nn as nn
 
+from math import log2
 from .init_utils import create_weights_init
 
 
@@ -12,6 +13,7 @@ class DCGAN(nn.Module):
         num_channels=3,
         num_features=64,
         num_latents=128,
+        image_size=64,
         conv_std=0.02,
         batchnorm_std=0.02,
         with_landmarks=False):
@@ -29,6 +31,7 @@ class DCGAN(nn.Module):
         self.num_channels = num_channels
         self.num_features = num_features
         self.num_latents = num_latents
+        self.image_size = image_size
         self.conv_std = conv_std
         self.batchnorm_std = batchnorm_std
         self.with_landmarks = with_landmarks
@@ -37,12 +40,14 @@ class DCGAN(nn.Module):
             "gan_type": gan_type,
             "num_channels": num_channels,
             "num_features": num_features,
+            "image_size": image_size,
         }
         G_params = {
             "gan_type": gan_type,
             "num_latents": num_latents,
             "num_features": num_features,
             "num_channels": num_channels,
+            "image_size": image_size,
         }
 
         self.D = DCGAN_Discriminator(**D_params)
@@ -55,23 +60,32 @@ class DCGAN(nn.Module):
 class DCGAN_Discriminator(nn.Module):
     """The discriminator of the MakeupNet"""
 
-    def __init__(self, gan_type, num_channels, num_features):
+    def __init__(self, gan_type, num_channels, num_features, image_size, max_features=512):
         super().__init__()
 
         using_gradient_penalty = gan_type == "wgan-gp"
         use_batchnorm = not using_gradient_penalty
 
-        # input is num_channels x H x W
-        self.main = nn.Sequential(
-            DCGAN_DiscriminatorBlock(num_channels, num_features),
-            DCGAN_DiscriminatorBlock(num_features * 1, num_features * 2, use_batchnorm=use_batchnorm),
-            DCGAN_DiscriminatorBlock(num_features * 2, num_features * 4, use_batchnorm=use_batchnorm),
-            DCGAN_DiscriminatorBlock(num_features * 4, num_features * 8, use_batchnorm=use_batchnorm),
-            nn.Conv2d(num_features * 8, 1, 4, stride=1, padding=0, bias=False),
-        )
+        # Count number of layers (including input) and calculate feature sizes
+        num_layers = int(round(log2(image_size // 4)))
+        features = [min(num_features * 2**i, max_features) for i in range(num_layers)]
+
+        modules = []
+
+        # Input layer
+        modules += [DCGAN_DiscriminatorBlock(num_channels, features[0])]
+
+        # Intermediate layers
+        for in_features, out_features in zip(features, features[1:]):
+            modules += [DCGAN_DiscriminatorBlock(in_features, out_features, use_batchnorm=use_batchnorm)]
+        
+        # Output layer (feature_size = 4 -> 1)
+        modules += [nn.Conv2d(features[-1], 1, 4, bias=False)]
 
         if gan_type == "gan":
-            self.main.add_module("D-Sigmoid", nn.Sigmoid())
+            modules += [nn.Sigmoid()]
+
+        self.main = nn.Sequential(*modules)
 
 
     def forward(self, inputs):
@@ -104,20 +118,31 @@ class DCGAN_DiscriminatorBlock(nn.Module):
 class DCGAN_Generator(nn.Module):
     """The generator of the MakeupNet"""
 
-    def __init__(self, gan_type, num_latents, num_features, num_channels):
+    def __init__(self, gan_type, num_latents, num_features, num_channels, image_size, max_features=512):
         super().__init__()
 
         # @XXX: is gan_type useless here?
 
-        self.main = nn.Sequential(
-            DCGAN_GeneratorBlock(num_latents, num_features * 8, stride=1, padding=0),
-            DCGAN_GeneratorBlock(num_features * 8, num_features * 4),
-            DCGAN_GeneratorBlock(num_features * 4, num_features * 2),
-            DCGAN_GeneratorBlock(num_features * 2, num_features * 1),
-            nn.ConvTranspose2d(num_features, num_channels, 4,
-                               stride=2, padding=1, bias=False),
-            nn.Tanh(),
-        )
+        # Count number of layers (including input) and calculate feature sizes
+        num_layers = int(round(log2(image_size // 4)))
+        features = [min(num_features * 2**i, max_features) for i in range(num_layers)][::-1]
+
+        modules = []
+
+        # Input layer
+        modules += [DCGAN_GeneratorBlock(num_latents, features[0], stride=1, padding=0)]
+
+        # Intermediate layers
+        for in_features, out_features in zip(features, features[1:]):
+            modules += [DCGAN_GeneratorBlock(in_features, out_features)]
+        
+        # Output layer
+        modules += [nn.ConvTranspose2d(features[-1], num_channels, 4,
+                                       stride=2, padding=1, bias=False)]
+
+        modules += [nn.Tanh()]
+
+        self.main = nn.Sequential(*modules)
 
 
     def forward(self, inputs):

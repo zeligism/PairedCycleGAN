@@ -20,6 +20,7 @@ RANDOM_SEED = 123
 ### Dataset parameters ###
 FILE_DIR = os.path.dirname(os.path.realpath(__file__))
 DATASET_DIR = os.path.join(FILE_DIR, "dataset", "data", "processing", "faces")
+IMAGE_SIZE = 64
 
 ### Network parameters ###
 GAN_TYPE = "gan"
@@ -85,7 +86,7 @@ def main(args):
 
     # Define data transformations
     transform_list = list(map(MakeupSampleTransform, [
-        transforms.Resize((64, 64)),
+        transforms.Resize((args.image_size, args.image_size)),
         transforms.ColorJitter(brightness=0.1),
         transforms.ToTensor(),
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
@@ -104,6 +105,7 @@ def main(args):
         "num_channels": args.num_channels,
         "num_latents": args.num_latents,
         "num_features": args.num_features,
+        "image_size": args.image_size,
         "with_landmarks": args.with_landmarks,
     }
 
@@ -145,6 +147,8 @@ if __name__ == "__main__":
     ### Dataset ###
     parser.add_argument("--dataset_dir", type=str, default=DATASET_DIR,
         help="directory of the makeup dataset.")
+    parser.add_argument("--image_size", type=int, default=IMAGE_SIZE,
+        help="resize images to be of dimensions (image_size x image_size).")
     parser.add_argument("--with_landmarks", action="store_true",
         help="use faces landmarks in training as well.")
     
@@ -205,7 +209,10 @@ if __name__ == "__main__":
     # Parse arguments
     args = parser.parse_args()
 
-    # Additional validation of input
+    # Additional validation of input @TODO: create positive_int nonnegative_int instead
+    if not (args.image_size > 0):
+        parser.error("Image size should be a positive integer.")
+
     if not (args.num_channels > 0):
         parser.error("Number of channels should be a positive integer.")
     if not (args.num_latents > 0):
