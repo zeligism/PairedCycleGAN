@@ -3,6 +3,7 @@ import torch.nn as nn
 
 from .init_utils import create_weights_init
 
+
 class DCGAN(nn.Module):
     """Deep Convolutional Generative Adversarial Network"""
 

@@ -6,7 +6,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.utils as vutils
 
-from .report_utils import plot_lines, create_progress_animation
+from .losses import *
+from .report_utils import *
 
 
 class GAN_Trainer:
@@ -260,6 +261,7 @@ class GAN_Trainer:
         # Sample fake images from a random latent vector
         latent = torch.randn(latent_size, device=self.device)
         fake = self.model.G(latent)
+
         # Train discriminator
         D_loss, D_on_real, D_on_fake1 = self.D_step(real, fake.detach())
 
@@ -297,48 +299,22 @@ class GAN_Trainer:
             the real images, as well as on the fake images, respectively.
         """
 
-        batch_size = real.size()[0]
-
         # Zero gradients
         self.D_optim.zero_grad()
 
         # Classify real and fake images
         D_on_real = self.model.D(real)
-        D_on_fake = self.model.D(fake)  # don't pass grads to G
+        D_on_fake = self.model.D(fake)
 
         if self.model.gan_type == "gan":
-            # Create (noisy) real and fake labels
-            real_label = 0.8 + 0.2 * torch.rand([batch_size], device=self.device)
-            fake_label = 0.05 * torch.rand([batch_size], device=self.device)
-            # Calculate binary cross entropy loss
-            D_loss_on_real = F.binary_cross_entropy(D_on_real, real_label)
-            D_loss_on_fake = F.binary_cross_entropy(D_on_fake, fake_label)
-            # Loss is: - log(D(x)) - log(1 - D(x_g)),
-            # which is equiv. to maximizing: log(D(x)) + log(1 - D(x_g))
-            D_loss = torch.mean(D_loss_on_real + D_loss_on_fake)
+            D_loss = D_loss_GAN(D_on_real, D_on_fake)
 
         elif self.model.gan_type == "wgan":
-            # Maximize: D(x) - D(x_g), i.e. minimize -(D(x) - D(x_g))
-            D_loss = -1 * torch.mean(D_on_real - D_on_fake)
+            D_loss = D_loss_WGAN(D_on_real, D_on_fake)
 
         elif self.model.gan_type == "wgan-gp":
-            # Calculate gradient penalty
-            eps = torch.rand([batch_size, 1, 1, 1], device=self.device)
-            interpolated = eps * real + (1 - eps) * fake
-            interpolated.requires_grad_()
-            D_on_inter = self.model.D(interpolated)
-
-            # Calculate gradient of D(x_i) wrt x_i for each batch
-            D_grad = torch.autograd.grad(D_on_inter, interpolated,
-                                         torch.ones_like(D_on_inter), retain_graph=True)
-            # D_grad will be a 1-tuple, as in: (grad,)
-            D_grad_norm = D_grad[0].view([batch_size, -1]).norm(dim=1)
-            grad_penalty = self.gp_coeff * (D_grad_norm - 1).pow(2)
-
-            # Maximize: D(x) - D(x_g) - gp_coeff * (|| grad of D(x_i) wrt x_i || - 1)^2,
-            # where x_i <- eps * x + (1 - eps) * x_g, and eps ~ rand(0,1)
-            D_loss = -1 * torch.mean(D_on_real - D_on_fake - grad_penalty)
-            self.grad_norms.append(D_grad_norm.mean().item())
+            grad_penalty = self.gradient_penalty(real, fake)
+            D_loss = D_loss_WGAN(D_on_real, D_on_fake, grad_penalty=grad_penalty)
 
         else:
             raise ValueError(f"gan_type {self.model.gan_type} not supported")
@@ -377,16 +353,10 @@ class GAN_Trainer:
         D_on_fake = self.model.D(fake)
 
         if self.model.gan_type == "gan":
-            # Calculate binary cross entropy loss with a fake binary label
-            batch_size = fake.size()[0]
-            fake_label = torch.zeros([batch_size], device=self.device)
-            # Loss is: -log(D(G(z))), which is equiv. to minimizing log(1-D(G(z)))
-            # We use this loss vs. the original one for stability only.
-            G_loss = F.binary_cross_entropy(D_on_fake, 1 - fake_label)
+            G_loss = G_loss_GAN(D_on_fake)
 
         elif self.model.gan_type == "wgan" or self.model.gan_type == "wgan-gp":
-            # Minimize: -D(G(z))
-            G_loss = (-D_on_fake).mean()
+            G_loss = G_loss_WGAN(D_on_fake)
 
         else:
             raise ValueError(f"gan_type {self.model.gan_type} not supported")
@@ -396,6 +366,32 @@ class GAN_Trainer:
         self.G_optim.step()
 
         return G_loss.item(), D_on_fake.mean().item()
+
+
+    def gradient_penalty(self, real, fake):
+
+        # @TODO: docs
+
+        batch_size = real.size()[0]
+
+        # Calculate gradient penalty
+        eps = torch.rand([batch_size, 1, 1, 1], device=self.device)
+        interpolated = eps * real + (1 - eps) * fake
+        interpolated.requires_grad_()
+        D_on_inter = self.model.D(interpolated)
+
+        # Calculate gradient of D(x_i) wrt x_i for each batch
+        D_grad = torch.autograd.grad(D_on_inter, interpolated,
+                                     torch.ones_like(D_on_inter), retain_graph=True)
+
+        # D_grad will be a 1-tuple, as in: (grad,)
+        D_grad_norm = D_grad[0].view([batch_size, -1]).norm(dim=1)
+        self.grad_norms.append(D_grad_norm.mean().item())
+
+        # Calculate the gradient penalty
+        grad_penalty = self.gp_coeff * (D_grad_norm - 1).pow(2)
+
+        return grad_penalty
 
 
     #################### Reporting and Tracking Methods ####################
