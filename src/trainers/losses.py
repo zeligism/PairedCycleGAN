@@ -30,6 +30,14 @@ def D_loss_WGAN(D_on_real, D_on_fake, grad_penalty=0.0):
     return D_loss
 
 
+def D_grad_penalty(D_grad_norm, gp_coeff):
+
+    # D's gradient penalty is `gp_coeff * (|| grad of D(x_i) wrt x_i || - 1)^2`
+    grad_penalty = (D_grad_norm - 1).pow(2) * gp_coeff
+
+    return grad_penalty
+
+
 def G_loss_GAN(D_on_fake):
 
     # Calculate binary cross entropy loss with a fake binary label
@@ -43,6 +51,7 @@ def G_loss_GAN(D_on_fake):
 
 
 def G_loss_WGAN(D_on_fake):
+
     # Minimize: -D(G(z))
     G_loss = (-D_on_fake).mean()
     

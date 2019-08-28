@@ -313,7 +313,8 @@ class GAN_Trainer:
             D_loss = D_loss_WGAN(D_on_real, D_on_fake)
 
         elif self.model.gan_type == "wgan-gp":
-            grad_penalty = self.gradient_penalty(real, fake)
+            D_grad_norm = self.D_grad_norm(real, fake)
+            grad_penalty = D_grad_penalty(D_grad_norm, self.gp_coeff)
             D_loss = D_loss_WGAN(D_on_real, D_on_fake, grad_penalty=grad_penalty)
 
         else:
@@ -368,7 +369,7 @@ class GAN_Trainer:
         return G_loss.item(), D_on_fake.mean().item()
 
 
-    def gradient_penalty(self, real, fake):
+    def D_grad_norm(self, real, fake):
 
         # @TODO: docs
 
@@ -388,10 +389,7 @@ class GAN_Trainer:
         D_grad_norm = D_grad[0].view([batch_size, -1]).norm(dim=1)
         self.grad_norms.append(D_grad_norm.mean().item())
 
-        # Calculate the gradient penalty
-        grad_penalty = self.gp_coeff * (D_grad_norm - 1).pow(2)
-
-        return grad_penalty
+        return D_grad_norm
 
 
     #################### Reporting and Tracking Methods ####################
