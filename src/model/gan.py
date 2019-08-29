@@ -9,14 +9,12 @@ class DCGAN(nn.Module):
     """Deep Convolutional Generative Adversarial Network"""
 
     def __init__(self,
-        gan_type="gan",
         num_channels=3,
         num_features=64,
         num_latents=128,
         image_size=64,
-        conv_std=0.02,
-        batchnorm_std=0.02,
-        with_landmarks=False):
+        gan_type="gan",
+        weights_init_params={}):
         """
         Initializes DCGAN.
 
@@ -27,40 +25,38 @@ class DCGAN(nn.Module):
         """
         super().__init__()
 
-        self.gan_type = gan_type
         self.num_channels = num_channels
         self.num_features = num_features
         self.num_latents = num_latents
         self.image_size = image_size
-        self.conv_std = conv_std
-        self.batchnorm_std = batchnorm_std
-        self.with_landmarks = with_landmarks
+        self.gan_type = gan_type
+        self.weights_init_params = weights_init_params
 
         D_params = {
-            "gan_type": gan_type,
             "num_channels": num_channels,
             "num_features": num_features,
             "image_size": image_size,
+            "gan_type": gan_type,
         }
         G_params = {
-            "gan_type": gan_type,
             "num_latents": num_latents,
             "num_features": num_features,
             "num_channels": num_channels,
             "image_size": image_size,
+            "gan_type": gan_type,
         }
 
         self.D = DCGAN_Discriminator(**D_params)
         self.G = DCGAN_Generator(**G_params)
 
-        weights_init = create_weights_init()
+        weights_init = create_weights_init(**weights_init_params)
         self.apply(weights_init)
 
 
 class DCGAN_Discriminator(nn.Module):
     """The discriminator of the MakeupNet"""
 
-    def __init__(self, gan_type, num_channels, num_features, image_size, max_features=512):
+    def __init__(self, num_channels, num_features, image_size, gan_type="gan", max_features=512):
         super().__init__()
 
         using_gradient_penalty = gan_type == "wgan-gp"
@@ -118,7 +114,7 @@ class DCGAN_DiscriminatorBlock(nn.Module):
 class DCGAN_Generator(nn.Module):
     """The generator of the MakeupNet"""
 
-    def __init__(self, gan_type, num_latents, num_features, num_channels, image_size, max_features=512):
+    def __init__(self, num_latents, num_features, num_channels, image_size, gan_type="gan", max_features=512):
         super().__init__()
 
         # @XXX: is gan_type useless here?

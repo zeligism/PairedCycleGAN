@@ -101,12 +101,11 @@ def main(args):
 
     # Define model parameters
     model_params = {
-        "gan_type": args.gan_type,
         "num_channels": args.num_channels,
         "num_latents": args.num_latents,
         "num_features": args.num_features,
         "image_size": args.image_size,
-        "with_landmarks": args.with_landmarks,
+        "gan_type": args.gan_type,
     }
 
     # Define training parameters
