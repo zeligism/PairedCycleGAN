@@ -7,6 +7,7 @@ import torchvision.transforms as transforms
 from dataset.dataset import MakeupDataset
 from dataset.transforms import MakeupSampleTransform
 from model.makeupnet import MakeupNet
+from trainers.gan_trainer import GAN_Trainer
 from trainers.makeupnet_trainer import MakeupNetTrainer
 
 # @TODO: add logging
@@ -130,7 +131,7 @@ def main(args):
     # Start initializing dataset, model, and trainer
     dataset = MakeupDataset(**dataset_params)
     model = MakeupNet(**model_params)
-    trainer = MakeupNetTrainer(model, dataset, **trainer_params)
+    trainer = GAN_Trainer(model, dataset, **trainer_params)
 
     # Train MakeupNet
     trainer.run(num_epochs=args.num_epochs, save_results=args.save_results)

@@ -62,7 +62,7 @@ class BaseTrainer:
         self.name = name
         self.results_dir = results_dir
         self.load_model_path = load_model_path
-        
+
         self.num_gpu = num_gpu
         self.num_workers = num_workers
         self.batch_size = batch_size
