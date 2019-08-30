@@ -2,24 +2,16 @@
 import os
 import datetime
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import torchvision.utils as vutils
 
+from .base_trainer import BaseTrainer
 from .losses import *
 from .report_utils import *
 
 
-class GAN_Trainer:
+class GAN_Trainer(BaseTrainer):
     """A trainer for a GAN."""
 
     def __init__(self, model, dataset,
-        name="trainer",
-        results_dir="results/",
-        load_model_path=None,
-        num_gpu=1,
-        num_workers=2,
-        batch_size=4,
         optimizer_name="sgd",
         lr=1e-4,
         momentum=0.9,
@@ -29,42 +21,24 @@ class GAN_Trainer:
         gp_coeff=10.0,
         stats_report_interval=50,
         progress_check_interval=200,
-        description="no description given"):
+        **kwargs):
         """
         Initializes GAN_Trainer.
 
         Args:
-            model: The makeup net.
-            dataset: The makeup dataset.
-            name: Name of this trainer.
-            results_dir: Directory in which results will be saved for each run.
-            load_model_path: Path to the model that will be loaded, if any.
-            num_gpu: Number of GPUs to use for training.
-            num_workers: Number of workers sampling from the dataset.
-            batch_size: Size of the batch. Must be > num_gpu.
+            model: The model.
+            dataset: The dataset.
             optimizer_name: The name of the optimizer to use (e.g. "sgd").
             lr: The learning rate of the optimizer.
             momentum: The momentum of used in the optimizer, if applicable.
             betas: The betas used in the Adam optimizer.
             D_iters: Number of iterations to train discriminator every batch.
-            clamp: Set to None if you don't want to clamp discriminator's weight after each update.
+            clamp: Range on which the discriminator's weight will be clamped after each update.
             gp_coeff: A coefficient for the gradient penalty (gp) of the discriminator.
             stats_report_interval: Report stats every `stats_report_interval` batch.
             progress_check_interval: Check progress every `progress_check_interval` batch.
-            description: Description of the experiment the trainer is running.
         """
-
-        # Initialize given parameters
-        self.model = model
-        self.dataset = dataset
-
-        self.name = name
-        self.results_dir = results_dir
-        self.load_model_path = load_model_path
-        
-        self.num_gpu = num_gpu
-        self.num_workers = num_workers
-        self.batch_size = batch_size
+        super().__init__(model, dataset, **kwargs)
 
         self.optimizer_name = optimizer_name
         self.lr = lr
@@ -78,31 +52,15 @@ class GAN_Trainer:
         self.stats_report_interval = stats_report_interval
         self.progress_check_interval = progress_check_interval
 
-        self.description = description
-
-        # Load model if necessary
-        if load_model_path is not None:
-            self.load_model(load_model_path)
-        
-        # Initialize device
-        using_cuda = torch.cuda.is_available() and self.num_gpu > 0
-        self.device = torch.device("cuda:0" if using_cuda else "cpu")
-
-        # Move model to device and parallelize model if possible
-        self.model = self.model.to(self.device)
-        if self.device.type == "cuda" and self.num_gpu > 1:
-            self.model = nn.DistributedDataParallel(self.model, list(range(self.num_gpu)))
-
         # Initialize optimizers for generator and discriminator
         self.D_optim = self.init_optim(self.model.D.parameters())
         self.G_optim = self.init_optim(self.model.G.parameters())
 
         # Initialize variables used for tracking loss and progress
-        self.iters = 1  # current iteration
+        self.fixed_latent = torch.randn([64, self.model.num_latents], device=self.device)
+        self.generated_grids = []
         self.losses = {"D": [-0.], "G": [-0.]}
         self.evals = {"D_on_real": [-0.], "D_on_fake1": [-0.], "D_on_fake2": [-0.]}
-        self.generated_grids = []
-        self.fixed_latent = torch.randn([64, self.model.num_latents], device=self.device)
 
 
     def init_optim(self, params):
@@ -128,72 +86,7 @@ class GAN_Trainer:
         return optim
 
 
-    def load_model(self, model_path):
-        if not os.path.isfile(model_path):
-            print(f"Couldn't load model: file '{model_path}' does not exist")
-            print("Training model from scratch.")
-        else:
-            print("Loading model...")
-            self.model.load_state_dict(torch.load(model_path))
-
-
-    def save_model(self, model_path):
-        print("Saving model")
-        torch.save(self.model.state_dict(), model_path)
-
-
     #################### Training Methods ####################
-
-    def run(self, num_epochs, save_results=False):
-        """
-        Runs the trainer. Trainer will train the model then save it.
-        Note that running trainer more than once will accumulate the results.
-
-        Args:
-            num_epochs: Number of epochs to run.
-            save_results: A flag indicating whether we should save the results this run.
-        """
-
-        # Initialize data loader
-        data_loader = torch.utils.data.DataLoader(self.dataset,
-            batch_size=self.batch_size, shuffle=True, num_workers=self.num_workers)
-
-        try:
-            # Try training the model
-            self.train(data_loader, num_epochs)
-        finally:
-            # Stop trainer, report results
-            self.stop(save_results)
-
-
-    def train(self, data_loader, num_epochs):
-        """
-        Trains `self.model` on data loaded from data loader.
-
-        Args:
-            data_loader: An iterator from which the data is sampled.
-            num_epochs: Number of epochs to run.
-        """
-
-        num_batches = len(data_loader)
-
-        print("Starting Training Loop...")
-        # For each epoch
-        for epoch in range(1, num_epochs + 1):
-            for batch, sample in enumerate(data_loader, 1):
-
-                # Train model on the samples
-                self.train_on(sample)
-
-                # Check progress of training so far
-                self.checkpoint(epoch, num_epochs, batch, num_batches)
-
-                self.iters += 1
-
-        # Check progress of at the end of training
-        self.checkpoint(num_batches, num_batches, num_epochs, num_epochs)
-        print("Finished training.")
-
 
     def train_on(self, sample):
         """
@@ -276,8 +169,6 @@ class GAN_Trainer:
         self.evals["D_on_real"].append(D_on_real)
         self.evals["D_on_fake1"].append(D_on_fake1)
         self.evals["D_on_fake2"].append(D_on_fake2)
-
-        return D_on_real, D_on_fake1, D_on_fake2
 
 
     def D_step(self, D_optim, D, real, fake):
@@ -432,28 +323,8 @@ class GAN_Trainer:
 
         # Check generator's progress by recording its output on a fixed input
         if self.iters % self.progress_check_interval == 0:
-            grid = self.generate_grid(self.model.G, self.fixed_latent)
+            grid = generate_grid(self.model.G, self.fixed_latent)
             self.generated_grids.append(grid)
-
-
-    def generate_grid(self, generator, latent):
-        """
-        Check generator's output on latent vectors and return it.
-
-        Args:
-            generator: The generator.
-            latent: Latent vector from which an image grid will be generated.
-
-        Returns:
-            A grid of images generated by `generator` from `latent`.
-        """
-
-        with torch.no_grad():
-            fake = generator(latent).detach()
-
-        image_grid = vutils.make_grid(fake.cpu(), padding=2, normalize=True)
-
-        return image_grid
 
 
     def report_training_stats(self, epoch, num_epochs, batch, num_batches, precision=4):
