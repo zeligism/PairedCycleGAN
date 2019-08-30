@@ -101,8 +101,7 @@ class GAN_Trainer:
         self.iters = 1  # current iteration
         self.losses = {"D": [-0.], "G": [-0.]}
         self.evals = {"D_on_real": [-0.], "D_on_fake1": [-0.], "D_on_fake2": [-0.]}
-        self.grad_norms = []
-        self.progress_frames = []
+        self.generated_grids = []
         self.fixed_latent = torch.randn([64, self.model.num_latents], device=self.device)
 
 
@@ -181,31 +180,22 @@ class GAN_Trainer:
         print("Starting Training Loop...")
         # For each epoch
         for epoch in range(1, num_epochs + 1):
-            for batch_index, sample in enumerate(data_loader, 1):
+            for batch, sample in enumerate(data_loader, 1):
 
-                # Sample real images
-                real = sample["before"].to(self.device)
+                # Train model on the samples
+                self.train_on(sample)
 
-                # Train model on the samples, and get the the discriminator's results
-                self.train_on(real)
-
-                # Report training stats
-                if batch_index % self.stats_report_interval == 0:
-                    self.report_training_stats(batch_index, num_batches, epoch, num_epochs)
-
-                # Check generator's progress by recording its output on a fixed input
-                if self.iters % self.progress_check_interval == 0:
-                    self.check_progress_of_generator()
+                # Check progress of training so far
+                self.checkpoint(epoch, num_epochs, batch, num_batches)
 
                 self.iters += 1
 
-        # Show stats and check progress at the end
-        self.report_training_stats(num_batches, num_batches, num_epochs, num_epochs)
-        self.check_progress_of_generator()
+        # Check progress of at the end of training
+        self.checkpoint(num_batches, num_batches, num_epochs, num_epochs)
         print("Finished training.")
 
 
-    def train_on(self, real):
+    def train_on(self, sample):
         """
         Trains on a sample of real and fake data.
         Throughout this file, we will denote a sample from the real data
@@ -246,12 +236,13 @@ class GAN_Trainer:
 
 
         Args:
-            real: Real data points sampled from the dataset.
+            sample: Real data points sampled from the dataset.
 
         Returns:
             The result of the discriminator's classifications on real and fake data.
         """
 
+        real = sample["before"].to(self.device)
         real += 1e-3 * torch.randn_like(real)  # @XXX
 
         # Calculate latent vector size
@@ -263,14 +254,17 @@ class GAN_Trainer:
         fake = self.model.G(latent)
 
         # Train discriminator
-        D_loss, D_on_real, D_on_fake1 = self.D_step(real, fake.detach())
+        D_results = self.D_step(self.D_optim, self.model.D, real, fake.detach())
+        D_loss, D_on_real, D_on_fake1 = D_results
 
         # Train generator if we trained discriminator D_iters time
         if self.iters % self.D_iters == 0:
             # Sample latent and fake again
             latent = torch.randn(latent_size, device=self.device)
             fake = self.model.G(latent)
-            G_loss, D_on_fake2 = self.G_step(fake)
+            # Train generator
+            G_results = self.G_step(self.G_optim, self.model.D, fake)
+            G_loss, D_on_fake2 = G_results
         else:
             # @TODO: I'm sure there is a better way to handle this
             G_loss = self.losses["G"][-1]
@@ -286,11 +280,13 @@ class GAN_Trainer:
         return D_on_real, D_on_fake1, D_on_fake2
 
 
-    def D_step(self, real, fake):
+    def D_step(self, D_optim, D, real, fake):
         """
-        Trains the discriminator. Maximize the score function.
+        Trains the discriminator D and maximizes its score function.
 
         Args:
+            D_optim: The optimizer for D.
+            D: The discriminator.
             real: Real data point sampled from the dataset.
             fake: Fake data point sampled from the generator.
 
@@ -299,34 +295,36 @@ class GAN_Trainer:
             the real images, as well as on the fake images, respectively.
         """
 
+        gan_type = self.model.gan_type
+
         # Zero gradients
-        self.D_optim.zero_grad()
+        D_optim.zero_grad()
 
         # Classify real and fake images
-        D_on_real = self.model.D(real)
-        D_on_fake = self.model.D(fake)
+        D_on_real = D(real)
+        D_on_fake = D(fake)
 
-        if self.model.gan_type == "gan":
+        if gan_type == "gan":
             D_loss = D_loss_GAN(D_on_real, D_on_fake)
 
-        elif self.model.gan_type == "wgan":
+        elif gan_type == "wgan":
             D_loss = D_loss_WGAN(D_on_real, D_on_fake)
 
-        elif self.model.gan_type == "wgan-gp":
-            D_grad_norm = self.D_grad_norm(real, fake)
+        elif gan_type == "wgan-gp":
+            D_grad_norm = D_grad_norm(D, real, fake)
             grad_penalty = D_grad_penalty(D_grad_norm, self.gp_coeff)
             D_loss = D_loss_WGAN(D_on_real, D_on_fake, grad_penalty=grad_penalty)
 
         else:
-            raise ValueError(f"gan_type {self.model.gan_type} not supported")
+            raise ValueError(f"gan_type {gan_type} not supported")
 
         # Calculate gradients and minimize loss
         D_loss.backward()
-        self.D_optim.step()
+        D_optim.step()
 
         # If WGAN, clamp D's weights to ensure k-Lipschitzness
-        if self.model.gan_type == "wgan":
-            [p.data.clamp_(*self.clamp) for p in self.model.D.parameters()]
+        if gan_type == "wgan":
+            [p.data.clamp_(*self.clamp) for p in D.parameters()]
 
         return (
             D_loss.item(),
@@ -335,61 +333,42 @@ class GAN_Trainer:
         )
 
 
-    def G_step(self, fake):
+    def G_step(self, G_optim, D, fake):
         """
-        Trains the generator. Minimize the score function.
+        Trains the generator and minimizes its score function.
 
         Args:
-            fake: Fake data point generated from a normal latent variable.
+            G_optim: The optimizer for G.
+            D: The discriminator.
+            fake: Fake data point generated from a latent variable.
 
         Returns:
             The mean loss of D on the fake images as well as
             the mean classification of the discriminator on the fake images.
         """
 
+        gan_type = self.model.gan_type
+
         # Zero gradients
-        self.G_optim.zero_grad()
+        G_optim.zero_grad()
 
         # Classify fake images
-        D_on_fake = self.model.D(fake)
+        D_on_fake = D(fake)
 
-        if self.model.gan_type == "gan":
+        if gan_type == "gan":
             G_loss = G_loss_GAN(D_on_fake)
 
-        elif self.model.gan_type == "wgan" or self.model.gan_type == "wgan-gp":
+        elif gan_type == "wgan" or gan_type == "wgan-gp":
             G_loss = G_loss_WGAN(D_on_fake)
 
         else:
-            raise ValueError(f"gan_type {self.model.gan_type} not supported")
+            raise ValueError(f"gan_type {gan_type} not supported")
 
         # Calculate gradients and minimize loss
         G_loss.backward()
-        self.G_optim.step()
+        G_optim.step()
 
         return G_loss.item(), D_on_fake.mean().item()
-
-
-    def D_grad_norm(self, real, fake):
-
-        # @TODO: docs
-
-        batch_size = real.size()[0]
-
-        # Calculate gradient penalty
-        eps = torch.rand([batch_size, 1, 1, 1], device=self.device)
-        interpolated = eps * real + (1 - eps) * fake
-        interpolated.requires_grad_()
-        D_on_inter = self.model.D(interpolated)
-
-        # Calculate gradient of D(x_i) wrt x_i for each batch
-        D_grad = torch.autograd.grad(D_on_inter, interpolated,
-                                     torch.ones_like(D_on_inter), retain_graph=True)
-
-        # D_grad will be a 1-tuple, as in: (grad,)
-        D_grad_norm = D_grad[0].view([batch_size, -1]).norm(dim=1)
-        self.grad_norms.append(D_grad_norm.mean().item())
-
-        return D_grad_norm
 
 
     #################### Reporting and Tracking Methods ####################
@@ -428,7 +407,7 @@ class GAN_Trainer:
 
         # Create an animation of the generator's progress
         animation_file = os.path.join(experiment_dir, "progress.mp4")
-        create_progress_animation(self.progress_frames, animation_file)
+        create_progress_animation(self.generated_grids, animation_file)
 
         # Write description file of experiment
         description_txt = os.path.join(experiment_dir, "description.txt")
@@ -436,33 +415,61 @@ class GAN_Trainer:
             f.write(self.description)
 
 
-    def check_progress_of_generator(self):
+    def checkpoint(self, epoch, num_epochs, batch, num_batches):
         """
-        Check generator's output on a fixed latent vector and record it.
+        The training checkpoint.
+
+        Args:
+            epoch: Current epoch.
+            num_epochs: Number of epochs to run.
+            batch: Current batch.
+            num_batches: Number of batches to run.
+        """
+
+        # Report training stats
+        if batch % self.stats_report_interval == 0:
+            self.report_training_stats(batch, num_batches, epoch, num_epochs)
+
+        # Check generator's progress by recording its output on a fixed input
+        if self.iters % self.progress_check_interval == 0:
+            grid = self.generate_grid(self.model.G, self.fixed_latent)
+            self.generated_grids.append(grid)
+
+
+    def generate_grid(self, generator, latent):
+        """
+        Check generator's output on latent vectors and return it.
+
+        Args:
+            generator: The generator.
+            latent: Latent vector from which an image grid will be generated.
+
+        Returns:
+            A grid of images generated by `generator` from `latent`.
         """
 
         with torch.no_grad():
-            fixed_fake = self.model.G(self.fixed_latent).detach()
+            fake = generator(latent).detach()
 
-        progress_grid = vutils.make_grid(fixed_fake.cpu(), padding=2, normalize=True)
+        image_grid = vutils.make_grid(fake.cpu(), padding=2, normalize=True)
 
-        self.progress_frames.append(progress_grid)
+        return image_grid
 
 
-    def report_training_stats(self, batch_index, num_batches, epoch, num_epochs, precision=4):
+    def report_training_stats(self, epoch, num_epochs, batch, num_batches, precision=4):
         """
         Reports/prints the training stats to the console.
 
         Args:
-            batch_index: Index of the current batch.
-            num_batches: Max number of batches.
             epoch: Current epoch.
             num_epochs: Max number of epochs.
+            batch: Index of the current batch.
+            num_batches: Max number of batches.
             precision: Precision of the float numbers reported.
         """
 
         report = \
-            "[{epoch}/{num_epochs}][{batch_index}/{num_batches}]\t" \
+            "[{epoch}/{num_epochs}][{batch}/{num_batches}]\t" \
             "Loss of D = {D_loss:.{p}f}\t" \
             "Loss of G = {G_loss:.{p}f}\t" \
             "D(x) = {D_of_x:.{p}f}\t" \
@@ -471,7 +478,7 @@ class GAN_Trainer:
         stats = {
             "epoch": epoch,
             "num_epochs": num_epochs,
-            "batch_index": batch_index,
+            "batch": batch,
             "num_batches": num_batches,
             "D_loss": self.losses["D"][-1],
             "G_loss": self.losses["G"][-1],

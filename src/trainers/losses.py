@@ -30,6 +30,26 @@ def D_loss_WGAN(D_on_real, D_on_fake, grad_penalty=0.0):
     return D_loss
 
 
+def D_grad_norm(self, discriminator, real, fake):
+
+    batch_size = real.size()[0]
+
+    # Calculate gradient penalty
+    eps = torch.rand([batch_size, 1, 1, 1], device=self.device)
+    interpolated = eps * real + (1 - eps) * fake
+    interpolated.requires_grad_()
+    D_on_inter = discriminator(interpolated)
+
+    # Calculate gradient of D(x_i) wrt x_i for each batch
+    D_grad = torch.autograd.grad(D_on_inter, interpolated,
+                                 torch.ones_like(D_on_inter), retain_graph=True)
+
+    # D_grad will be a 1-tuple, as in: (grad,)
+    D_grad_norm = D_grad[0].view([batch_size, -1]).norm(dim=1)
+
+    return D_grad_norm
+
+
 def D_grad_penalty(D_grad_norm, gp_coeff):
 
     # D's gradient penalty is `gp_coeff * (|| grad of D(x_i) wrt x_i || - 1)^2`
