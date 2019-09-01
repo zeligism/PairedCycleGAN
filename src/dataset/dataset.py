@@ -113,3 +113,7 @@ class MakeupDataset(Dataset):
             return Image.new("RGB", (0,0))
 
 
+    def __repr__(self):
+        return "{}({!r})".format(self.__class__.__name__, self.dataset_dir)
+
+
