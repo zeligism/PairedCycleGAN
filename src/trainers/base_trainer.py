@@ -1,8 +1,10 @@
 
 import os
+import datetime
 import torch
 
-from .init_utils import weights_init, init_optim
+from pprint import pformat
+from .init_utils import weights_init
 
 
 class BaseTrainer:
@@ -135,7 +137,6 @@ class BaseTrainer:
         Args:
             sample: Real data points sampled from the dataset.
         """
-
         raise NotImplementedError("train_on() should be implemented!")
 
 
@@ -146,8 +147,7 @@ class BaseTrainer:
         Args:
             save_results: Results will be saved if this was set to True.
         """
-
-        raise NotImplementedError("stop() should be implemented!")
+        pass
 
 
     def checkpoint(self, epoch, num_epochs, batch, num_batches):
@@ -160,6 +160,32 @@ class BaseTrainer:
             batch: Current batch.
             num_batches: Number of batches to run.
         """
+        pass
 
-        raise NotImplementedError("checkpoint() should be implemented!")
+
+    def get_experiment_name(self, delimiter=", "):
+        """
+        Get the name of trainer's training train...
+
+        Args:
+            delimiter: The delimiter between experiment's parameters. Pretty useless.
+        """
+        info = {
+            "name": self.name,
+            "iters": self.iters - 1,
+        }
+
+        timestamp = datetime.datetime.now().strftime("%y%m%d-%H%M%S")
+        experiment = delimiter.join(f"{k}={v}" for k,v in info.items())
+
+        return "[{}] {}".format(timestamp, experiment)
+        
+
+    def __repr__(self):
+
+        self_dict = dict({k:v for k,v in self.__dict__.items() if k[0] != "_"})
+        pretty_dict = pformat(self_dict)
+        
+        return self.__class__.__name__ + "(**" + pretty_dict + ")"
+
 
