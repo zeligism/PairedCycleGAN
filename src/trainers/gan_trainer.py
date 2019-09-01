@@ -1,10 +1,10 @@
 
 import os
-import datetime
 import torch
 
 from .base_trainer import BaseTrainer
-from .losses import *
+from .init_utils import init_optim
+from .gan_utils import *
 from .report_utils import *
 
 
@@ -12,10 +12,8 @@ class GAN_Trainer(BaseTrainer):
     """A trainer for a GAN."""
 
     def __init__(self, model, dataset,
-        optimizer_name="sgd",
-        lr=1e-4,
-        momentum=0.9,
-        betas=(0.5, 0.9),
+        D_optim_configs={},
+        G_optim_configs={},
         D_iters=5,
         clamp=0.01,
         gp_coeff=10.0,
@@ -25,13 +23,16 @@ class GAN_Trainer(BaseTrainer):
         """
         Initializes GAN_Trainer.
 
+        Note:
+            Optimizer's configurations/parameters must be passable to the
+            optimizer (in torch.optim). It should also include a parameter
+            `optim_choice` for the choice of the optimizer (e.g. "sgd" or "adam").
+
         Args:
             model: The model.
             dataset: The dataset.
-            optimizer_name: The name of the optimizer to use (e.g. "sgd").
-            lr: The learning rate of the optimizer.
-            momentum: The momentum of used in the optimizer, if applicable.
-            betas: The betas used in the Adam optimizer.
+            D_optim_configs: Configurations for the discriminator's optimizer.
+            G_optim_configs: Configurations for the generator's optimizer.
             D_iters: Number of iterations to train discriminator every batch.
             clamp: Range on which the discriminator's weight will be clamped after each update.
             gp_coeff: A coefficient for the gradient penalty (gp) of the discriminator.
@@ -39,11 +40,6 @@ class GAN_Trainer(BaseTrainer):
             progress_check_interval: Check progress every `progress_check_interval` batch.
         """
         super().__init__(model, dataset, **kwargs)
-
-        self.optimizer_name = optimizer_name
-        self.lr = lr
-        self.momentum = momentum
-        self.betas = betas
 
         self.D_iters = D_iters
         self.clamp = clamp
@@ -53,37 +49,23 @@ class GAN_Trainer(BaseTrainer):
         self.progress_check_interval = progress_check_interval
 
         # Initialize optimizers for generator and discriminator
-        self.D_optim = self.init_optim(self.model.D.parameters())
-        self.G_optim = self.init_optim(self.model.G.parameters())
+        self.D_optim = init_optim(self.model.D.parameters(), **D_optim_configs)
+        self.G_optim = init_optim(self.model.G.parameters(), **G_optim_configs)
 
-        # Initialize variables used for tracking loss and progress
-        self.fixed_latent = torch.randn([64, self.model.num_latents], device=self.device)
-        self.generated_grids = []
-        self.losses = {"D": [-0.], "G": [-0.]}
-        self.evals = {"D_on_real": [-0.], "D_on_fake1": [-0.], "D_on_fake2": [-0.]}
+        # Initialize list of image grids generated from a fixed latent variable
+        grid_size = 8 * 8
+        self._fixed_latent = torch.randn([grid_size, self.model.num_latents], device=self.device)
+        self._generated_grids = []
 
-
-    def init_optim(self, params):
-        """
-        Initializes the optimizer.
-
-        Args:
-            params: The parameters this optimizer will optimize.
-
-        Returns:
-            The optimizer (torch.optim). The default is SGD.
-        """
-
-        if self.optimizer_name == "adam":
-            optim = torch.optim.Adam(params, lr=self.lr, betas=self.betas)
-        elif self.optimizer_name == "rmsprop":
-            optim = torch.optim.RMSprop(params, lr=self.lr)
-        elif self.optimizer_name == "sgd":
-            optim = torch.optim.SGD(params, lr=self.lr, momentum=self.momentum)
-        else:
-            raise ValueError("Optimizer '{}' not recognized".format(self.optimizer_name))
-
-        return optim
+        # Initialize data dict
+        nan = lambda: torch.tensor(float("nan"))
+        self._data = {
+            "D_loss": [nan()],
+            "G_loss": [nan()],
+            "D_on_real": [nan()],
+            "D_on_fake1": [nan()],
+            "D_on_fake2": [nan()],
+        }
 
 
     #################### Training Methods ####################
@@ -147,119 +129,33 @@ class GAN_Trainer(BaseTrainer):
         fake = self.model.G(latent)
 
         # Train discriminator
-        D_results = self.D_step(self.D_optim, self.model.D, real, fake.detach())
-        D_loss, D_on_real, D_on_fake1 = D_results
+        D_results = D_step(self.D_optim, self.model.D, real, fake.detach(),
+                           gan_type=self.model.gan_type,
+                           clamp=self.clamp,
+                           gp_coeff=self.gp_coeff)
 
         # Train generator if we trained discriminator D_iters time
         if self.iters % self.D_iters == 0:
             # Sample latent and fake again
             latent = torch.randn(latent_size, device=self.device)
             fake = self.model.G(latent)
+
             # Train generator
-            G_results = self.G_step(self.G_optim, self.model.D, fake)
-            G_loss, D_on_fake2 = G_results
+            G_results = G_step(self.G_optim, self.model.D, fake,
+                               gan_type=self.model.gan_type)
+
         else:
-            # @TODO: I'm sure there is a better way to handle this
-            G_loss = self.losses["G"][-1]
-            D_on_fake2 = self.evals["D_on_fake2"][-1]
+            G_results = {
+                "loss": self._data["G_loss"][-1],
+                "D_on_fake": self._data["D_on_fake2"][-1]
+            }
 
         # Record losses and evaluations
-        self.losses["D"].append(D_loss)
-        self.losses["G"].append(G_loss)
-        self.evals["D_on_real"].append(D_on_real)
-        self.evals["D_on_fake1"].append(D_on_fake1)
-        self.evals["D_on_fake2"].append(D_on_fake2)
-
-
-    def D_step(self, D_optim, D, real, fake):
-        """
-        Trains the discriminator D and maximizes its score function.
-
-        Args:
-            D_optim: The optimizer for D.
-            D: The discriminator.
-            real: Real data point sampled from the dataset.
-            fake: Fake data point sampled from the generator.
-
-        Returns:
-            A tuple containing the loss, the mean classification of D on
-            the real images, as well as on the fake images, respectively.
-        """
-
-        gan_type = self.model.gan_type
-
-        # Zero gradients
-        D_optim.zero_grad()
-
-        # Classify real and fake images
-        D_on_real = D(real)
-        D_on_fake = D(fake)
-
-        if gan_type == "gan":
-            D_loss = D_loss_GAN(D_on_real, D_on_fake)
-
-        elif gan_type == "wgan":
-            D_loss = D_loss_WGAN(D_on_real, D_on_fake)
-
-        elif gan_type == "wgan-gp":
-            D_grad_norm = D_grad_norm(D, real, fake)
-            grad_penalty = D_grad_penalty(D_grad_norm, self.gp_coeff)
-            D_loss = D_loss_WGAN(D_on_real, D_on_fake, grad_penalty=grad_penalty)
-
-        else:
-            raise ValueError(f"gan_type {gan_type} not supported")
-
-        # Calculate gradients and minimize loss
-        D_loss.backward()
-        D_optim.step()
-
-        # If WGAN, clamp D's weights to ensure k-Lipschitzness
-        if gan_type == "wgan":
-            [p.data.clamp_(*self.clamp) for p in D.parameters()]
-
-        return (
-            D_loss.item(),
-            D_on_real.mean().item(),
-            D_on_fake.mean().item(),
-        )
-
-
-    def G_step(self, G_optim, D, fake):
-        """
-        Trains the generator and minimizes its score function.
-
-        Args:
-            G_optim: The optimizer for G.
-            D: The discriminator.
-            fake: Fake data point generated from a latent variable.
-
-        Returns:
-            The mean loss of D on the fake images as well as
-            the mean classification of the discriminator on the fake images.
-        """
-
-        gan_type = self.model.gan_type
-
-        # Zero gradients
-        G_optim.zero_grad()
-
-        # Classify fake images
-        D_on_fake = D(fake)
-
-        if gan_type == "gan":
-            G_loss = G_loss_GAN(D_on_fake)
-
-        elif gan_type == "wgan" or gan_type == "wgan-gp":
-            G_loss = G_loss_WGAN(D_on_fake)
-
-        else:
-            raise ValueError(f"gan_type {gan_type} not supported")
-
-        # Calculate gradients and minimize loss
-        G_loss.backward()
-        G_optim.step()
-
-        return G_loss.item(), D_on_fake.mean().item()
+        self._data["D_loss"].append(D_results["loss"])
+        self._data["G_loss"].append(G_results["loss"])
+        self._data["D_on_real"].append(D_results["D_on_real"])
+        self._data["D_on_fake1"].append(D_results["D_on_fake"])
+        self._data["D_on_fake2"].append(G_results["D_on_fake"])
 
 
     #################### Reporting and Tracking Methods ####################
@@ -272,9 +168,19 @@ class GAN_Trainer(BaseTrainer):
             save_results: Results will be saved if this was set to True.
         """
 
+        losses = {
+            "D_loss": self._data["D_loss"],
+            "G_loss": self._data["G_loss"],
+        }
+        evals = {
+            "D_on_real":  self._data["D_on_real"],
+            "D_on_fake1": self._data["D_on_fake1"],
+            "D_on_fake2": self._data["D_on_fake2"],
+        }
+
         if not save_results:
-            plot_lines(self.losses, title="Losses")
-            plot_lines(self.evals, title="Evals")
+            plot_lines(losses, title="Losses")
+            plot_lines(evals, title="Evals")
             return
 
         # Create results directory if it hasn't been created yet
@@ -290,20 +196,20 @@ class GAN_Trainer(BaseTrainer):
 
         # Plot losses of D and G
         losses_file = os.path.join(experiment_dir, "losses.png")
-        plot_lines(self.losses, losses_file, title="Losses of D and G")
+        plot_lines(losses, losses_file, title="Losses of D and G")
 
         # Plot evals of D on real and fake data
         evals_file = os.path.join(experiment_dir, "evals.png")
-        plot_lines(self.evals, evals_file, title="Evaluations of D on real and fake data")
+        plot_lines(evals, evals_file, title="Evaluations of D on real and fake data")
 
         # Create an animation of the generator's progress
         animation_file = os.path.join(experiment_dir, "progress.mp4")
-        create_progress_animation(self.generated_grids, animation_file)
+        create_progress_animation(self._generated_grids, animation_file)
 
-        # Write description file of experiment
-        description_txt = os.path.join(experiment_dir, "description.txt")
-        with open(description_txt, "w") as f:
-            f.write(self.description)
+        # Write details of experiment
+        details_txt = os.path.join(experiment_dir, "repr.txt")
+        with open(details_txt, "w") as f:
+            f.write(self.__repr__())
 
 
     def checkpoint(self, epoch, num_epochs, batch, num_batches):
@@ -323,11 +229,11 @@ class GAN_Trainer(BaseTrainer):
 
         # Check generator's progress by recording its output on a fixed input
         if self.iters % self.progress_check_interval == 0:
-            grid = generate_grid(self.model.G, self.fixed_latent)
-            self.generated_grids.append(grid)
+            grid = generate_grid(self.model.G, self._fixed_latent)
+            self._generated_grids.append(grid)
 
 
-    def report_training_stats(self, epoch, num_epochs, batch, num_batches, precision=4):
+    def report_training_stats(self, epoch, num_epochs, batch, num_batches, precision=3):
         """
         Reports/prints the training stats to the console.
 
@@ -351,50 +257,13 @@ class GAN_Trainer(BaseTrainer):
             "num_epochs": num_epochs,
             "batch": batch,
             "num_batches": num_batches,
-            "D_loss": self.losses["D"][-1],
-            "G_loss": self.losses["G"][-1],
-            "D_of_x": self.evals["D_on_real"][-1],
-            "D_of_G_z1": self.evals["D_on_fake1"][-1],
-            "D_of_G_z2": self.evals["D_on_fake2"][-1],
+            "D_loss": self._data["D_loss"][-1],
+            "G_loss": self._data["G_loss"][-1],
+            "D_of_x": self._data["D_on_real"][-1],
+            "D_of_G_z1": self._data["D_on_fake1"][-1],
+            "D_of_G_z2": self._data["D_on_fake2"][-1],
             "p": precision,
         }
 
         print(report.format(**stats))
-
-
-    def get_experiment_name(self, delimiter=", "):
-        """
-        Get the name of trainer's training train...
-
-        Args:
-            delimiter: The delimiter between experiment's parameters. Pretty useless.
-        """
-
-        experiment_details = {}
-
-        # Train hyperparameters
-        experiment_details["name"] = self.name
-        experiment_details["iters"] = self.iters - 1
-        experiment_details["batch_size"] = self.batch_size
-
-        # Optimizer's hyperparameters
-        experiment_details["optimizer_name"] = self.optimizer_name
-        experiment_details["lr"] = self.lr
-        if self.optimizer_name == "adam":
-            experiment_details["betas"] = self.betas
-        else:
-            experiment_details["momentum"] = self.momentum
-
-        # GAN's hyperparameters
-        experiment_details["gan"] = self.model.gan_type
-        experiment_details["D_iters"] = self.D_iters
-        if self.model.gan_type == "wgan":
-            experiment_details["clamp"] = self.clamp
-        if self.model.gan_type == "wgan-gp":
-            experiment_details["lambda"] = self.gp_coeff
-
-        timestamp = datetime.datetime.now().strftime("%y%m%d-%H%M%S")
-        experiment = delimiter.join("{}={}".format(k,v) for k,v in experiment_details.items())
-
-        return "[{}] {}".format(timestamp, experiment)
 
