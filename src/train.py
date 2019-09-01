@@ -1,5 +1,6 @@
 
 import os
+import yaml
 import argparse
 import torch
 import torchvision.transforms as transforms
@@ -11,6 +12,10 @@ from trainers.makeupnet_trainer import MakeupNetTrainer
 
 # @TODO: add logging
 # @TODO: put hyperparams in yaml
+"""
+with open("optim_configs.yaml") as f:
+    test = yaml.load(f)
+"""
 
 ### DEFAULT HYPERPARAMETERS ###
 
@@ -46,8 +51,8 @@ LEARNING_RATE = 1e-4
 MOMENTUM = 0.
 BETAS = (0.9, 0.999)
 
-if GAN_TYPE == "sgd":
-    OPTIMIZER_NAME = "adam"
+if GAN_TYPE == "gan":
+    OPTIMIZER_NAME = "sgd"
     LEARNING_RATE = 1e-4
 
 elif GAN_TYPE == "wgan":
@@ -116,10 +121,20 @@ def main(args):
         "num_gpu": args.num_gpu,
         "num_workers": args.num_workers,
         "batch_size": args.batch_size,
-        "optimizer_name": args.optimizer,
-        "lr": args.learning_rate,
-        "momentum": args.momentum,
-        "betas": tuple(args.betas),
+
+        "D_optim_configs": {
+            "optim_choice": args.optimizer,
+            "lr": args.learning_rate,
+            "momentum": args.momentum,
+            "betas": tuple(args.betas),
+        },
+        "G_optim_configs": {
+            "optim_choice": args.optimizer,
+            "lr": args.learning_rate,
+            "momentum": args.momentum,
+            "betas": tuple(args.betas),
+        },
+
         "D_iters": args.D_iters,
         "clamp": tuple(args.clamp),
         "gp_coeff": args.gp_coeff,

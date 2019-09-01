@@ -15,9 +15,7 @@ class DCGAN(nn.Module):
         gan_type="gan",
         weights_init_params={}):
         """
-        Initializes DCGAN.
-
-        Args: @TODO
+        Initializes DCGAN. @TODO: Args.
         """
         super().__init__()
 
@@ -110,8 +108,6 @@ class DCGAN_Generator(nn.Module):
     def __init__(self, num_latents, num_features, image_channels=3, image_size=64, gan_type="gan", max_features=512):
         super().__init__()
 
-        # @XXX: is gan_type useless here?
-
         # Count number of layers (including input) and calculate feature sizes
         num_layers = int(round(log2(image_size // 4)))
         features = [min(num_features * 2**i, max_features) for i in range(num_layers)][::-1]
@@ -128,7 +124,6 @@ class DCGAN_Generator(nn.Module):
         # Output layer
         modules += [nn.ConvTranspose2d(features[-1], image_channels, 4,
                                        stride=2, padding=1, bias=False)]
-
         modules += [nn.Tanh()]
 
         self.main = nn.Sequential(*modules)
