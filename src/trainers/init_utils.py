@@ -1,6 +1,8 @@
 
 import torch.nn as nn
 
+from torch.optim import SGD, RMSprop, Adam
+
 
 def create_weights_init(conv_std=0.02, batchnorm_std=0.02):
     """
@@ -32,31 +34,29 @@ def weights_init(module, conv_std=0.02, batchnorm_std=0.02):
         nn.init.constant_(module.bias.data, 0)
 
 
-def init_optim(self, optim_name, params, optim_configs):
+def init_optim(params, optim_choice="sgd", lr=1e-4, momentum=0.0, betas=(0.9, 0.999)):
     """
     Initializes the optimizer.
 
     Args:
-        optim_name: The choice of the optimizer.
         params: Parameters the optimizer will optimize.
+        choice: The choice of the optimizer.
         optim_configs: Configurations for the optimizer.
 
     Returns:
         The optimizer (torch.optim).
     """
 
-    optimizers = {
-        "sgd": torch.optim.SGD,
-        "rmsprop": torch.optim.RMSprop,
-        "adam": torch.optim.Adam,
-    }
-    
-    if optim_name not in optimizers:
-        raise ValueError(f"Optimizer '{optim_name}' not recognized.")
+    if optim_choice == "adam":
+        optim = Adam(params, lr=lr, betas=betas)
+    elif optim_choice == "rmsprop":
+        optim = RMSprop(params, lr=lr)
+    elif optim_choice == "sgd":
+        optim = SGD(params, lr=lr, momentum=momentum)
+    else:
+        raise ValueError(f"Optimizer '{optim_choice}' not recognized")
 
-    optimizer = optimizers[optim_name]
-
-    return optimizer(params, **optim_configs)
+    return optim
 
 
     
