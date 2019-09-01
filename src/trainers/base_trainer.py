@@ -2,32 +2,7 @@
 import os
 import torch
 
-
-def init_optim(self, optim_name, params, optim_configs):
-    """
-    Initializes the optimizer.
-
-    Args:
-        optim_name: The choice of the optimizer.
-        params: Parameters the optimizer will optimize.
-        optim_configs: Configurations for the optimizer.
-
-    Returns:
-        The optimizer (torch.optim).
-    """
-
-    optimizers = {
-        "sgd": torch.optim.SGD,
-        "rmsprop": torch.optim.RMSprop,
-        "adam": torch.optim.Adam,
-    }
-    
-    if optim_name not in optimizers:
-        raise ValueError(f"Optimizer '{optim_name}' not recognized.")
-
-    optimizer = optimizers[optim_name]
-
-    return optimizer(params, **optim_configs)
+from .init_utils import weights_init, init_optim
 
 
 class BaseTrainer:
@@ -83,6 +58,9 @@ class BaseTrainer:
         self.model = self.model.to(self.device)
         if self.device.type == "cuda" and self.num_gpu > 1:
             self.model = torch.nn.DistributedDataParallel(self.model, list(range(self.num_gpu)))
+
+        # Initialize model
+        self.model.apply(weights_init)
 
 
     def load_model(self, model_path):

@@ -2,16 +2,15 @@
 import torch.nn as nn
 
 from math import log2
-from .init_utils import create_weights_init
 
 
 class DCGAN(nn.Module):
     """Deep Convolutional Generative Adversarial Network"""
 
     def __init__(self,
-        num_channels=3,
-        num_features=64,
         num_latents=128,
+        num_features=64,
+        image_channels=3,
         image_size=64,
         gan_type="gan",
         weights_init_params={}):
@@ -19,29 +18,26 @@ class DCGAN(nn.Module):
         Initializes DCGAN.
 
         Args: @TODO
-            num_channels: the number of channels in the input images.
-            num_features: controls the numbers of filters in each conv/up-conv layer.
-            num_latents: the number of latent factors.
         """
         super().__init__()
 
-        self.num_channels = num_channels
-        self.num_features = num_features
         self.num_latents = num_latents
+        self.num_features = num_features
+        self.image_channels = image_channels
         self.image_size = image_size
         self.gan_type = gan_type
         self.weights_init_params = weights_init_params
 
         D_params = {
-            "num_channels": num_channels,
             "num_features": num_features,
+            "image_channels": image_channels,
             "image_size": image_size,
             "gan_type": gan_type,
         }
         G_params = {
             "num_latents": num_latents,
             "num_features": num_features,
-            "num_channels": num_channels,
+            "image_channels": image_channels,
             "image_size": image_size,
             "gan_type": gan_type,
         }
@@ -49,14 +45,11 @@ class DCGAN(nn.Module):
         self.D = DCGAN_Discriminator(**D_params)
         self.G = DCGAN_Generator(**G_params)
 
-        weights_init = create_weights_init(**weights_init_params)
-        self.apply(weights_init)
-
 
 class DCGAN_Discriminator(nn.Module):
     """The discriminator of the MakeupNet"""
 
-    def __init__(self, num_channels, num_features, image_size, gan_type="gan", max_features=512):
+    def __init__(self, num_features, image_channels=3, image_size=64, gan_type="gan", max_features=512):
         super().__init__()
 
         using_gradient_penalty = gan_type == "wgan-gp"
@@ -69,7 +62,7 @@ class DCGAN_Discriminator(nn.Module):
         modules = []
 
         # Input layer
-        modules += [DCGAN_DiscriminatorBlock(num_channels, features[0])]
+        modules += [DCGAN_DiscriminatorBlock(image_channels, features[0])]
 
         # Intermediate layers
         for in_features, out_features in zip(features, features[1:]):
@@ -114,7 +107,7 @@ class DCGAN_DiscriminatorBlock(nn.Module):
 class DCGAN_Generator(nn.Module):
     """The generator of the MakeupNet"""
 
-    def __init__(self, num_latents, num_features, num_channels, image_size, gan_type="gan", max_features=512):
+    def __init__(self, num_latents, num_features, image_channels=3, image_size=64, gan_type="gan", max_features=512):
         super().__init__()
 
         # @XXX: is gan_type useless here?
@@ -133,7 +126,7 @@ class DCGAN_Generator(nn.Module):
             modules += [DCGAN_GeneratorBlock(in_features, out_features)]
         
         # Output layer
-        modules += [nn.ConvTranspose2d(features[-1], num_channels, 4,
+        modules += [nn.ConvTranspose2d(features[-1], image_channels, 4,
                                        stride=2, padding=1, bias=False)]
 
         modules += [nn.Tanh()]
