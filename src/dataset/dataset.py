@@ -1,9 +1,14 @@
 
 import os
-from PIL import Image
-from torch.utils.data import Dataset
+import torch
+import numpy as np
 
+from PIL import Image
+from face_recognition import face_landmarks
+from torch.utils.data import Dataset
 from .data.utility import files_iter
+
+dict_to_list = lambda d: [x for l in d.values() for x in l]
 
 
 class MakeupDataset(Dataset):
@@ -25,7 +30,10 @@ class MakeupDataset(Dataset):
         self.dataset_dir = dataset_dir
         self.with_landmarks = with_landmarks
         self.transform = transform
-        self.images = self.get_images(self.dataset_dir)
+        self.images = self.get_images()
+
+        self.landmarks_cache = [None] * len(self.images)
+        self.landmarks_size = [72, 2]
 
 
     def __len__(self):
@@ -59,58 +67,65 @@ class MakeupDataset(Dataset):
             "after":  image_after
         }
 
-        # Create and add landmarks if needed
-        if self.with_landmarks:
-            landmarks = {
-                "before": self.load_landmarks(image_name_before),
-                "after":  self.load_landmarks(image_name_after),
-            }
-            sample["landmarks"] = landmarks
-
-        # Apply transformations, if any
+        # Apply transformations on images
         if self.transform is not None:
             sample = self.transform(sample)
+
+        # Find landmarks, use cache if already done
+        if self.with_landmarks:
+            if self.landmarks_cache[index] is None:
+                landmarks = self.find_landmarks(sample)
+                self.landmarks_cache[index] = landmarks
+            else:
+                landmarks = self.landmarks_cache[index]
+
+            sample["landmarks"] = landmarks
 
         return sample
 
 
-    def get_images(self, dataset_dir):
+    def get_images(self):
         """
         Return a list of pairs of (before, after) makeup images name in `dataset_dir`.
-
-        Args:
-            dataset_dir: The directory of the dataset.
 
         Returns:
             A list of tuples of the names of before and after makeup images in `dataset_dir`.
         """
 
-        all_images = list(files_iter(dataset_dir))
+        all_images = list(files_iter(self.dataset_dir))
         before_images = list(filter(lambda s: s.find("before") != -1, all_images))
         after_images = list(filter(lambda s: s.find("after") != -1, all_images))
 
         return list(zip(sorted(before_images), sorted(after_images)))
 
 
-    def load_landmarks(self, image_name):
+    def find_landmarks(self, sample):
         """
-        Load the landmarks associated with `image_name`.
+        Find the landmarks of the images in the sample.
 
         Args:
-            image_name: The name of the image of which we want the landmarks.
+            sample: A sample from the dataset.
 
         Returns:
-            The landmarks associated with `image_name`.
+            The landmarks associated with the sample.
         """
 
-        # Get landmarks
-        landmarks_name = image_name.split(".")[0] + ".png"
-        landmarks_path = os.path.join(self.dataset_dir, "landmarks", landmarks_name)
+        unnormalize = lambda t: t * 0.5 + 0.5  # @XXX: hard-coded un-normalization
+        to_uint8_rgb = lambda t: (255 * t).round().to(torch.uint8)
+        torch_to_numpy = lambda t: t.permute(1, 2, 0).numpy()
 
-        if os.path.exists(landmarks_path):
-            return Image.open(landmarks_path)
-        else:
-            return Image.new("RGB", (0,0))
+        landmarks = {}
+
+        for label, image in sample.items():
+            # Image is a pytorch tensor, prepare it as an image in standard numpy format
+            image = torch_to_numpy(to_uint8_rgb(unnormalize(image)))
+            landmarks_found = face_landmarks(image)
+            if len(landmarks_found) > 0:
+                landmarks[label] = torch.tensor(dict_to_list(landmarks_found[0]), dtype=torch.int)
+            else:
+                landmarks[label] = torch.zeros(self.landmarks_size, dtype=torch.int)
+
+        return landmarks
 
 
     def __repr__(self):

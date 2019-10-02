@@ -1,6 +1,7 @@
 
 import os
 import argparse
+import pickle
 import numpy as np
 import face_recognition
 from PIL import Image, ImageDraw
@@ -82,6 +83,12 @@ def extract_face(file_name, source_dir, dest_dir):
 
         # Crop face and save
         top, right, bottom, left = face_locations[0]
+        height, width = len(image), len(image[0])
+        # Zoom out a little bit (20% height, 15% width, with respect to face size)
+        hpad, wpad = int(0.20 * (bottom-top)), int(0.15 * (right-left))
+        top, bottom = max(0, top - hpad), min(height, bottom + hpad)
+        left, right = max(0, left - wpad), min(width, right + wpad)
+        # Crop image and save as PIL
         face_image = image[top:bottom, left:right]
         pil_image = Image.fromarray(face_image)
         pil_image.save(face_image_path)
@@ -149,6 +156,11 @@ def extract_landmarks(file_name, source_dir, dest_dir):
 
         # Save landmarks
         landmarks_image.save(os.path.join(dest_dir, landmarks_name))
+
+        # Pickle landmarks
+        landmarks_path = os.path.join(dest_dir, os.path.splitext(landmarks_name)[0] + ".pickle")
+        with open(landmarks_path, "wb") as f:
+            pickle.dump(face_landmarks[0], f)
 
     return landmarks_name
 

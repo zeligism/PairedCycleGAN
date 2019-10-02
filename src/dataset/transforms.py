@@ -24,16 +24,8 @@ class MakeupSampleTransform:
             The transform sample with `self.transform`.
         """
 
-        transformed_sample = {
-            "before": self.transform(sample["before"]),
-            "after":  self.transform(sample["after"]),
-        }
+        sample["before"] = self.transform(sample["before"])
+        sample["after"] = self.transform(sample["after"])
 
-        if "landmarks" in sample:
-            transformed_sample["landmarks"] = {
-            "before": self.transform(sample["landmarks"]["before"]),
-            "after": self.transform(sample["landmarks"]["after"]),
-        }
-
-        return transformed_sample
+        return sample
 
