@@ -3,22 +3,22 @@ import os
 import torch
 
 from .base_trainer import BaseTrainer
-from .init_utils import init_optim
-from .gan_utils import *
-from .report_utils import *
+from .utils.init_utils import init_optim
+from .utils.gan_utils import *
+from .utils.report_utils import *
 
 
 class GAN_Trainer(BaseTrainer):
     """A trainer for a GAN."""
 
     def __init__(self, model, dataset,
-        D_optim_configs={},
-        G_optim_configs={},
+        D_optim_config={},
+        G_optim_config={},
         D_iters=5,
         clamp=0.01,
         gp_coeff=10.0,
-        stats_report_interval=50,
-        progress_check_interval=200,
+        stats_interval=50,
+        generate_grid_interval=200,
         **kwargs):
         """
         Initializes GAN_Trainer.
@@ -31,13 +31,13 @@ class GAN_Trainer(BaseTrainer):
         Args:
             model: The model.
             dataset: The dataset.
-            D_optim_configs: Configurations for the discriminator's optimizer.
-            G_optim_configs: Configurations for the generator's optimizer.
+            D_optim_config: Configurations for the discriminator's optimizer.
+            G_optim_config: Configurations for the generator's optimizer.
             D_iters: Number of iterations to train discriminator every batch.
             clamp: Range on which the discriminator's weight will be clamped after each update.
             gp_coeff: A coefficient for the gradient penalty (gp) of the discriminator.
-            stats_report_interval: Report stats every `stats_report_interval` batch.
-            progress_check_interval: Check progress every `progress_check_interval` batch.
+            stats_interval: Report stats every `stats_interval` batch.
+            generate_grid_interval: Check progress every `generate_grid_interval` batch.
         """
         super().__init__(model, dataset, **kwargs)
 
@@ -45,12 +45,12 @@ class GAN_Trainer(BaseTrainer):
         self.clamp = clamp
         self.gp_coeff = gp_coeff
 
-        self.stats_report_interval = stats_report_interval
-        self.progress_check_interval = progress_check_interval
+        self.stats_interval = stats_interval
+        self.generate_grid_interval = generate_grid_interval
 
         # Initialize optimizers for generator and discriminator
-        self.D_optim = init_optim(self.model.D.parameters(), **D_optim_configs)
-        self.G_optim = init_optim(self.model.G.parameters(), **G_optim_configs)
+        self.D_optim = init_optim(self.model.D.parameters(), **D_optim_config)
+        self.G_optim = init_optim(self.model.G.parameters(), **G_optim_config)
 
         # Initialize list of image grids generated from a fixed latent variable
         grid_size = 8 * 8
@@ -58,19 +58,19 @@ class GAN_Trainer(BaseTrainer):
         self._generated_grids = []
 
         # Initialize data dict
-        nan = lambda: torch.tensor(float("nan"))
+        nan = torch.tensor(float("nan"))
         self._data = {
-            "D_loss": [nan()],
-            "G_loss": [nan()],
-            "D_on_real": [nan()],
-            "D_on_fake1": [nan()],
-            "D_on_fake2": [nan()],
+            "D_loss": [nan],
+            "G_loss": [nan],
+            "D_on_real": [nan],
+            "D_on_fake1": [nan],
+            "D_on_fake2": [nan],
         }
 
 
     #################### Training Methods ####################
 
-    def train_on(self, sample):
+    def train_step(self, sample):
         """
         Trains on a sample of real and fake data.
         Throughout this file, we will denote a sample from the real data
@@ -118,18 +118,16 @@ class GAN_Trainer(BaseTrainer):
         """
 
         real = sample["before"].to(self.device)
-        real += 1e-3 * torch.randn_like(real)  # @XXX
 
         # Calculate latent vector size
-        this_batch_size = real.size()[0]
-        latent_size = torch.Size([this_batch_size, self.model.num_latents])
+        latent_size = torch.Size([real.size()[0], self.model.num_latents])
 
         # Sample fake images from a random latent vector
         latent = torch.randn(latent_size, device=self.device)
-        fake = self.model.G(latent)
+        fake = self.model.G(latent).detach()
 
         # Train discriminator
-        D_results = D_step(self.D_optim, self.model.D, real, fake.detach(),
+        D_results = D_step(self.D_optim, self.model.D, real, fake,
                            gan_type=self.model.gan_type,
                            clamp=self.clamp,
                            gp_coeff=self.gp_coeff)
@@ -145,14 +143,15 @@ class GAN_Trainer(BaseTrainer):
                                gan_type=self.model.gan_type)
 
         else:
+            # @TODO: make this better
             G_results = {
-                "loss": self._data["G_loss"][-1],
-                "D_on_fake": self._data["D_on_fake2"][-1]
+                "G_loss": self._data["G_loss"][-1],
+                "D_on_fake": self._data["D_on_fake2"][-1],
             }
 
         # Record losses and evaluations
-        self._data["D_loss"].append(D_results["loss"])
-        self._data["G_loss"].append(G_results["loss"])
+        self._data["D_loss"].append(D_results["D_loss"])
+        self._data["G_loss"].append(G_results["G_loss"])
         self._data["D_on_real"].append(D_results["D_on_real"])
         self._data["D_on_fake1"].append(D_results["D_on_fake"])
         self._data["D_on_fake2"].append(G_results["D_on_fake"])
@@ -212,9 +211,9 @@ class GAN_Trainer(BaseTrainer):
             f.write(self.__repr__())
 
 
-    def checkpoint(self, epoch, num_epochs, batch, num_batches):
+    def post_train_step(self, epoch, num_epochs, batch, num_batches):
         """
-        The training checkpoint.
+        The post-training step.
 
         Args:
             epoch: Current epoch.
@@ -224,11 +223,11 @@ class GAN_Trainer(BaseTrainer):
         """
 
         # Report training stats
-        if batch % self.stats_report_interval == 0:
+        if batch % self.stats_interval == 0:
             self.report_training_stats(batch, num_batches, epoch, num_epochs)
 
         # Check generator's progress by recording its output on a fixed input
-        if self.iters % self.progress_check_interval == 0:
+        if self.iters % self.generate_grid_interval == 0:
             grid = generate_grid(self.model.G, self._fixed_latent)
             self._generated_grids.append(grid)
 

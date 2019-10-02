@@ -12,10 +12,17 @@ class DCGAN(nn.Module):
         num_features=64,
         image_channels=3,
         image_size=64,
-        gan_type="gan",
-        weights_init_params={}):
+        gan_type="gan"):
         """
-        Initializes DCGAN. @TODO: Args.
+        Initializes DCGAN.
+
+        Args:
+            num_latents: Number of latent factors.
+            num_features: Number of features in the convolutions.
+            image_channels: Number of channels in the input image.
+            image_size: Size (i.e. height or width) of image.
+            gan_type: Type of GAN (e.g. "gan" or "wgan-gp").
+
         """
         super().__init__()
 
@@ -24,7 +31,6 @@ class DCGAN(nn.Module):
         self.image_channels = image_channels
         self.image_size = image_size
         self.gan_type = gan_type
-        self.weights_init_params = weights_init_params
 
         D_params = {
             "num_features": num_features,

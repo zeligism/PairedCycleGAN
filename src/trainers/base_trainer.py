@@ -4,7 +4,7 @@ import datetime
 import torch
 
 from pprint import pformat
-from .init_utils import weights_init
+from .utils.init_utils import weights_init
 
 
 class BaseTrainer:
@@ -17,7 +17,8 @@ class BaseTrainer:
         num_gpu=1,
         num_workers=2,
         batch_size=4,
-        description="no description given"):
+        description="no description given",
+        **kwargs):
         """
         Initializes BaseTrainer.
 
@@ -113,52 +114,71 @@ class BaseTrainer:
         num_batches = len(data_loader)
 
         print("Starting Training Loop...")
+
         # For each epoch
         for epoch in range(1, num_epochs + 1):
             for batch, sample in enumerate(data_loader, 1):
 
-                # Train model on the samples
-                self.train_on(sample)
+                # Do things before training step (check progress, record data, etc)
+                self.pre_train_step(epoch, num_epochs, batch, num_batches)
 
-                # Check progress of training so far
-                self.checkpoint(epoch, num_epochs, batch, num_batches)
+                # Train model on the sample
+                self.train_step(sample)
+
+                # Do things after training step (check progress, record data, etc)
+                self.post_train_step(epoch, num_epochs, batch, num_batches)
 
                 self.iters += 1
 
-        # Check progress of at the end of training
-        self.checkpoint(num_batches, num_batches, num_epochs, num_epochs)
+        # Do a post-training step at the end as well
+        self.post_train_step(num_batches, num_batches, num_epochs, num_epochs)
+
         print("Finished training.")
 
 
-    def train_on(self, sample):
+    def train_step(self, sample):
         """
         Trains on a sample from the dataset.
 
         Args:
             sample: Real data points sampled from the dataset.
         """
-        raise NotImplementedError("train_on() should be implemented!")
+        raise NotImplementedError("train_step() should be implemented!")
 
 
-    def stop(self, save_results=False):
+    def pre_train_step(self, epoch, num_epochs, batch, num_batches):
         """
-        Stops the trainer and report the result of the experiment.
-
-        Args:
-            save_results: Results will be saved if this was set to True.
-        """
-        pass
-
-
-    def checkpoint(self, epoch, num_epochs, batch, num_batches):
-        """
-        The training checkpoint.
+        The training preparation, or what happens before each training step.
 
         Args:
             epoch: Current epoch.
             num_epochs: Number of epochs to run.
             batch: Current batch.
             num_batches: Number of batches to run.
+        """
+        pass
+
+
+    def post_train_step(self, epoch, num_epochs, batch, num_batches):
+        """
+        The training checkpoint, or what happens after each training step.
+
+        Args:
+            epoch: Current epoch.
+            num_epochs: Number of epochs to run.
+            batch: Current batch.
+            num_batches: Number of batches to run.
+        """
+        pass
+
+
+    def stop(self, save_results=False):
+        """
+        Stops the trainer, or what happens when the trainer stops.
+        Note: This will run even on keyboard interrupts.
+
+        Args:
+            save_results: Results will be saved if True.
         """
         pass
 
