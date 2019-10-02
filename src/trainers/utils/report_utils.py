@@ -43,7 +43,7 @@ def create_progress_animation(frames, filename):
     ani.save(filename)
 
 
-def generate_grid(self, generator, latent):
+def generate_grid(generator, latent):
     """
     Check generator's output on latent vectors and return it.
 

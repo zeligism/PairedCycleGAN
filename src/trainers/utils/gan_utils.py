@@ -50,7 +50,7 @@ def D_step(D_optim, D, real, fake,
         [p.data.clamp_(*clamp) for p in D.parameters()]
 
     return {
-        "loss": D_loss.item(),
+        "D_loss": D_loss.item(),
         "D_on_real": D_on_real.mean().item(),
         "D_on_fake": D_on_fake.mean().item(),
     }
@@ -90,9 +90,49 @@ def G_step(G_optim, D, fake, gan_type="gan"):
     G_optim.step()
 
     return {
-        "loss": G_loss.item(),
+        "G_loss": G_loss.item(),
         "D_on_fake": D_on_fake.mean().item()
     }
+
+
+def get_D_loss(D, real, fake, gan_type="gan", gp_coeff=10.):
+
+    # Classify real and fake images
+    D_on_real = D(real)
+    D_on_fake = D(fake)
+
+    if gan_type == "gan":
+        loss = D_loss_GAN(D_on_real, D_on_fake)
+
+    elif gan_type == "wgan":
+        loss = D_loss_WGAN(D_on_real, D_on_fake)
+
+    elif gan_type == "wgan-gp":
+        D_grad_norm = get_D_grad_norm(D, real, fake)
+        grad_penalty = get_grad_penalty(D_grad_norm, gp_coeff)
+        loss = D_loss_WGAN(D_on_real, D_on_fake, grad_penalty=grad_penalty)
+
+    else:
+        raise ValueError(f"gan_type {gan_type} not supported")
+
+    return loss
+
+
+def get_G_loss(D, fake, gan_type="gan"):
+
+    # Classify fake images
+    D_on_fake = D(fake)
+
+    if gan_type == "gan":
+        loss = G_loss_GAN(D_on_fake)
+
+    elif gan_type == "wgan" or gan_type == "wgan-gp":
+        loss = G_loss_WGAN(D_on_fake)
+
+    else:
+        raise ValueError(f"gan_type {gan_type} not supported")
+
+    return loss
 
 
 def D_loss_GAN(D_on_real, D_on_fake):
@@ -121,12 +161,33 @@ def D_loss_WGAN(D_on_real, D_on_fake, grad_penalty=0.0):
     return D_loss
 
 
-def get_D_grad_norm(self, discriminator, real, fake):
+def G_loss_GAN(D_on_fake):
+
+    # Calculate binary cross entropy loss with a fake binary label
+    fake_label = torch.zeros_like(D_on_fake)
+
+    # Loss is: -log(D(G(z))), which is equiv. to minimizing log(1-D(G(z)))
+    # We use this loss vs. the original one for stability only.
+    G_loss = F.binary_cross_entropy(D_on_fake, 1 - fake_label)
+
+    return G_loss
+
+
+def G_loss_WGAN(D_on_fake):
+
+    # Minimize: -D(G(z))
+    G_loss = (-D_on_fake).mean()
+    
+    return G_loss
+
+
+def get_D_grad_norm(discriminator, real, fake):
 
     batch_size = real.size()[0]
+    device = real.device
 
     # Calculate gradient penalty
-    eps = torch.rand([batch_size, 1, 1, 1], device=self.device)
+    eps = torch.rand([batch_size, 1, 1, 1], device=device)
     interpolated = eps * real + (1 - eps) * fake
     interpolated.requires_grad_()
     D_on_inter = discriminator(interpolated)
@@ -147,26 +208,5 @@ def get_grad_penalty(grad_norm, gp_coeff=10.):
     grad_penalty = (grad_norm - 1).pow(2) * gp_coeff
 
     return grad_penalty
-
-
-def G_loss_GAN(D_on_fake):
-
-    # Calculate binary cross entropy loss with a fake binary label
-    fake_label = torch.zeros_like(D_on_fake)
-
-    # Loss is: -log(D(G(z))), which is equiv. to minimizing log(1-D(G(z)))
-    # We use this loss vs. the original one for stability only.
-    G_loss = F.binary_cross_entropy(D_on_fake, 1 - fake_label)
-
-    return G_loss
-
-
-def G_loss_WGAN(D_on_fake):
-
-    # Minimize: -D(G(z))
-    G_loss = (-D_on_fake).mean()
-    
-    return G_loss
-
 
 
