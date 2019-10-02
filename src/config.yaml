@@ -1,0 +1,157 @@
+####################################
+dcgan:
+  dataset:
+    dataset_dir: "dataset/data/processing/faces"
+    with_landmarks: false
+
+  model:
+    num_latents: 128
+    num_features: 64
+    image_channels: 3
+    image_size: 64
+    gan_type: gan
+
+  trainer:
+    name: "trainer"
+    results_dir: "results/"
+    load_model_path:
+
+    num_gpu: 1
+    num_workers: 2
+    batch_size: 4
+
+    D_optim_config:
+      optim_choice: sgd
+      lr: 1.0e-4
+      momentum: 0.
+      betas: [0.9, 0.999]
+
+    G_optim_config:
+      optim_choice: sgd
+      lr: 1.0e-4
+      momentum: 0.
+      betas: [0.9, 0.999]
+
+    D_iters: 5
+    clamp: [-0.01, 0.01]
+    gp_coeff: 10.
+
+    stats_interval: 50
+    generate_grid_interval: 200
+
+
+####################################
+wgan:
+  dataset:
+    dataset_dir: "dataset/data/processing/faces"
+    with_landmarks: false
+
+  model:
+    num_latents: 128
+    num_features: 64
+    image_channels: 3
+    image_size: 64
+    gan_type: wgan
+
+  trainer:
+    name: "trainer"
+    results_dir: "results/"
+    load_model_path:
+
+    num_gpu: 1
+    num_workers: 2
+    batch_size: 4
+
+    D_optim_config:
+      optim_choice: rmsprop
+      lr: 5.0e-5
+      momentum: 0.
+      betas: [0.5, 0.9]
+
+    G_optim_config:
+      optim_choice: rmsprop
+      lr: 5.0e-5
+      momentum: 0.
+      betas: [0.5, 0.9]
+
+    D_iters: 5
+    clamp: [-0.01, 0.01]
+    gp_coeff: 10.
+
+    stats_interval: 50
+    generate_grid_interval: 200
+
+
+####################################
+wgan-gp:
+  dataset:
+    dataset_dir: "dataset/data/processing/faces"
+    with_landmarks: false
+
+  model:
+    num_latents: 128
+    num_features: 64
+    image_channels: 3
+    image_size: 64
+    gan_type: wgan-gp
+
+  trainer:
+    name: "trainer"
+    results_dir: "results/"
+    load_model_path:
+
+    num_gpu: 1
+    num_workers: 2
+    batch_size: 4
+
+    D_optim_config:
+      optim_choice: adam
+      lr: 1.0e-4
+      momentum: 0.
+      betas: [0.0, 0.9]
+
+    G_optim_config:
+      optim_choice: adam
+      lr: 1.0e-4
+      momentum: 0.
+      betas: [0.0, 0.9]
+
+    D_iters: 5
+    clamp: [-0.01, 0.01]
+    gp_coeff: 10.
+
+    stats_interval: 50
+    generate_grid_interval: 200
+
+
+####################################
+makeupnet:
+  dataset:
+    dataset_dir: "dataset/data/processing/faces"
+    with_landmarks: false
+
+  model:
+    num_features: 64
+    image_channels: 3
+    image_size: 64
+    gan_type: gan
+
+  trainer:
+    batch_size: 4
+
+    D_optim_config:
+      optim_choice: adam
+      lr: 1.0e-4
+      #betas: [0.5, 0.9]
+
+    G_optim_config:
+      optim_choice: adam
+      lr: 1.0e-4
+      #betas: [0.5, 0.9]
+
+    D_iters: 5
+    gp_coeff: 10.
+
+    stats_interval: 1
+
+
