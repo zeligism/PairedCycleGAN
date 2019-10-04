@@ -4,6 +4,7 @@ import datetime
 import torch
 
 from pprint import pformat
+from collections import defaultdict
 from .utils.init_utils import weights_init
 
 
@@ -17,6 +18,7 @@ class BaseTrainer:
         num_gpu=1,
         num_workers=2,
         batch_size=4,
+        stats_interval=10,
         description="no description given",
         **kwargs):
         """
@@ -31,6 +33,7 @@ class BaseTrainer:
             num_gpu: Number of GPUs to use for training.
             num_workers: Number of workers sampling from the dataset.
             batch_size: Size of the batch. Must be > num_gpu.
+            stats_interval: Report stats every `stats_interval` batch.
             description: Description of the experiment the trainer is running.
         """
 
@@ -45,9 +48,11 @@ class BaseTrainer:
         self.num_workers = num_workers
         self.batch_size = batch_size
 
+        self.stats_interval = stats_interval
         self.description = description
 
         self.iters = 1  # current iteration
+        self._data = defaultdict(list)  # contains data of experiment
 
         # Load model if necessary
         if load_model_path is not None:
@@ -169,7 +174,9 @@ class BaseTrainer:
             batch: Current batch.
             num_batches: Number of batches to run.
         """
-        pass
+        # Report training stats
+        if batch % self.stats_interval == 0:
+            self.report_training_stats(epoch, num_epochs, batch, num_batches)
 
 
     def stop(self, save_results=False):
@@ -199,7 +206,46 @@ class BaseTrainer:
         experiment = delimiter.join(f"{k}={v}" for k,v in info.items())
 
         return "[{}] {}".format(timestamp, experiment)
+
+
+    def data(self):
+        return self._data
+
+
+    def get_data(self, label):
+        return self._data[label]
+
+
+    def get_current_value(self, label):
+        return self._data[label][-1] if len(self._data[label]) > 0 else None
+
+
+    def get_data_containing(self, phrase):
+        return {k: v for k, v in self._data.items() if k.find(phrase) != -1}
+
+
+    def add_data(self, label, value):
+        self._data[label].append(value)
+
+
+    def clear_data(self, label):
+        self._data[label] = []
+
+
+    def report_training_stats(self, epoch, num_epochs, batch, num_batches, precision=3):
+
+        # Progress of training
+        progress = f"[{epoch}/{num_epochs}][{batch}/{num_batches}]  "
+
+        # Show the stat of an item
+        item_stat = lambda item: f"{item[0]} = {item[1][-1]:.{precision}f}"
+        # Join the stats separated by tabs
+        stats = ",  ".join(map(item_stat, self._data.items()))
+
+        report = progress + stats
         
+        print(report)
+
 
     def __repr__(self):
 

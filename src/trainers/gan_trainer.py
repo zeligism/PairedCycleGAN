@@ -17,7 +17,6 @@ class GAN_Trainer(BaseTrainer):
         D_iters=5,
         clamp=0.01,
         gp_coeff=10.0,
-        stats_interval=50,
         generate_grid_interval=200,
         **kwargs):
         """
@@ -36,7 +35,6 @@ class GAN_Trainer(BaseTrainer):
             D_iters: Number of iterations to train discriminator every batch.
             clamp: Range on which the discriminator's weight will be clamped after each update.
             gp_coeff: A coefficient for the gradient penalty (gp) of the discriminator.
-            stats_interval: Report stats every `stats_interval` batch.
             generate_grid_interval: Check progress every `generate_grid_interval` batch.
         """
         super().__init__(model, dataset, **kwargs)
@@ -44,8 +42,6 @@ class GAN_Trainer(BaseTrainer):
         self.D_iters = D_iters
         self.clamp = clamp
         self.gp_coeff = gp_coeff
-
-        self.stats_interval = stats_interval
         self.generate_grid_interval = generate_grid_interval
 
         # Initialize optimizers for generator and discriminator
@@ -56,16 +52,6 @@ class GAN_Trainer(BaseTrainer):
         grid_size = 8 * 8
         self._fixed_latent = torch.randn([grid_size, self.model.num_latents], device=self.device)
         self._generated_grids = []
-
-        # Initialize data dict
-        nan = torch.tensor(float("nan"))
-        self._data = {
-            "D_loss": [nan],
-            "G_loss": [nan],
-            "D_on_real": [nan],
-            "D_on_fake1": [nan],
-            "D_on_fake2": [nan],
-        }
 
 
     #################### Training Methods ####################
@@ -117,47 +103,92 @@ class GAN_Trainer(BaseTrainer):
             The result of the discriminator's classifications on real and fake data.
         """
 
+        # Sample real data from the dataset
         real = sample["before"].to(self.device)
-
-        # Calculate latent vector size
-        latent_size = torch.Size([real.size()[0], self.model.num_latents])
-
-        # Sample fake images from a random latent vector
-        latent = torch.randn(latent_size, device=self.device)
-        fake = self.model.G(latent).detach()
+        batch_size = real.size()[0]
 
         # Train discriminator
-        D_results = D_step(self.D_optim, self.model.D, real, fake,
-                           gan_type=self.model.gan_type,
-                           clamp=self.clamp,
-                           gp_coeff=self.gp_coeff)
+        latent = self.sample_latent(batch_size)
+        self.D_step(real, latent)
 
-        # Train generator if we trained discriminator D_iters time
+        # If WGAN, clamp D's weights to ensure k-Lipschitzness
+        if self.model.gan_type == "wgan":
+            [p.data.clamp_(*clamp) for p in D.parameters()]
+
         if self.iters % self.D_iters == 0:
-            # Sample latent and fake again
-            latent = torch.randn(latent_size, device=self.device)
-            fake = self.model.G(latent)
-
-            # Train generator
-            G_results = G_step(self.G_optim, self.model.D, fake,
-                               gan_type=self.model.gan_type)
-
+            # Train generator if we trained discriminator D_iters times
+            latent = self.sample_latent(batch_size)
+            self.G_step(latent)
         else:
-            # @TODO: make this better
-            G_results = {
-                "G_loss": self._data["G_loss"][-1],
-                "D_on_fake": self._data["D_on_fake2"][-1],
-            }
+            # Fill the current iter's spot with the previous value
+            self.add_data("G_loss", self.get_current_value("G_loss"))
+            self.add_data("D_on_fake2", self.get_current_value("D_on_fake2"))
 
-        # Record losses and evaluations
-        self._data["D_loss"].append(D_results["D_loss"])
-        self._data["G_loss"].append(G_results["G_loss"])
-        self._data["D_on_real"].append(D_results["D_on_real"])
-        self._data["D_on_fake1"].append(D_results["D_on_fake"])
-        self._data["D_on_fake2"].append(G_results["D_on_fake"])
+
+    def D_step(self, real, latent):
+
+        D, G = self.model.D, self.model.G
+
+        # Zero gradients
+        self.D_optim.zero_grad()
+
+        # Sample fake data from a latent (ignore gradients)
+        with torch.no_grad():
+            fake = G(latent).detach()  # @TODO: detach() redundant?
+
+        # Classify real and fake data
+        D_on_real = D(real)
+        D_on_fake = D(fake)
+
+        # Calculate loss and its gradients
+        D_loss = get_D_loss(D, real, fake, gan_type=self.model.gan_type, gp_coeff=self.gp_coeff)
+        D_loss.backward()
+
+        # Calculate gradients and minimize loss
+        self.D_optim.step()
+
+        # Record results
+        self.add_data("D_loss", D_loss.mean().item())
+        self.add_data("D_on_real", D_on_real.mean().item())
+        self.add_data("D_on_fake1", D_on_fake.mean().item())
+
+
+    def G_step(self, latent):
+
+        D, G = self.model.D, self.model.G
+        
+        # Zero gradients
+        self.G_optim.zero_grad()
+
+        # Sample fake data from latent
+        fake = G(latent)
+
+        # Classify fake data
+        D_on_fake = D(fake)
+
+        # Calculate loss and its gradients
+        G_loss = get_G_loss(D, fake, gan_type=self.model.gan_type)
+        G_loss.backward()
+
+        # Optimize
+        self.G_optim.step()
+
+        # Record results
+        self.add_data("G_loss", G_loss.mean().item())
+        self.add_data("D_on_fake2", D_on_fake.mean().item())
+
+
+    def sample_latent(self, batch_size):
+
+        # Calculate latent size and sample from Gaussian
+        latent_size = [batch_size, self.model.num_latents]
+        latent = torch.randn(latent_size, device=self.device)
+
+        return latent
 
 
     #################### Reporting and Tracking Methods ####################
+
 
     def stop(self, save_results=False):
         """
@@ -167,15 +198,8 @@ class GAN_Trainer(BaseTrainer):
             save_results: Results will be saved if this was set to True.
         """
 
-        losses = {
-            "D_loss": self._data["D_loss"],
-            "G_loss": self._data["G_loss"],
-        }
-        evals = {
-            "D_on_real":  self._data["D_on_real"],
-            "D_on_fake1": self._data["D_on_fake1"],
-            "D_on_fake2": self._data["D_on_fake2"],
-        }
+        losses = self.get_data_containing("loss")
+        evals = self.get_data_containing("D_on")
 
         if not save_results:
             plot_lines(losses, title="Losses")
@@ -224,7 +248,7 @@ class GAN_Trainer(BaseTrainer):
 
         # Report training stats
         if batch % self.stats_interval == 0:
-            self.report_training_stats(batch, num_batches, epoch, num_epochs)
+            self.report_training_stats(epoch, num_epochs, batch, num_batches)
 
         # Check generator's progress by recording its output on a fixed input
         if self.iters % self.generate_grid_interval == 0:
@@ -232,7 +256,7 @@ class GAN_Trainer(BaseTrainer):
             self._generated_grids.append(grid)
 
 
-    def report_training_stats(self, epoch, num_epochs, batch, num_batches, precision=3):
+    def _report_training_stats(self, epoch, num_epochs, batch, num_batches, precision=3):
         """
         Reports/prints the training stats to the console.
 
@@ -256,11 +280,11 @@ class GAN_Trainer(BaseTrainer):
             "num_epochs": num_epochs,
             "batch": batch,
             "num_batches": num_batches,
-            "D_loss": self._data["D_loss"][-1],
-            "G_loss": self._data["G_loss"][-1],
-            "D_of_x": self._data["D_on_real"][-1],
-            "D_of_G_z1": self._data["D_on_fake1"][-1],
-            "D_of_G_z2": self._data["D_on_fake2"][-1],
+            "D_loss": self.get_current_value("D_loss"),
+            "G_loss": self.get_current_value("G_loss"),
+            "D_of_x": self.get_current_value("D_on_real"),
+            "D_of_G_z1": self.get_current_value("D_on_fake1"),
+            "D_of_G_z2": self.get_current_value("D_on_fake2"),
             "p": precision,
         }
 
