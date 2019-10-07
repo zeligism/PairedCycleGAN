@@ -1,8 +1,8 @@
 
 import os
 import torch
-import numpy as np
 
+from random import choice
 from PIL import Image
 from face_recognition import face_landmarks
 from torch.utils.data import Dataset
@@ -14,7 +14,7 @@ dict_to_list = lambda d: [x for l in d.values() for x in l]
 class MakeupDataset(Dataset):
     """A dataset of before-and-after makeup images."""
 
-    def __init__(self, dataset_dir, with_landmarks=False, transform=None):
+    def __init__(self, dataset_dir, with_landmarks=False, transform=None, paired=True):
         """
         Initializes MakeupDataset.
 
@@ -30,58 +30,11 @@ class MakeupDataset(Dataset):
         self.dataset_dir = dataset_dir
         self.with_landmarks = with_landmarks
         self.transform = transform
-        self.images = self.get_images()
+        self.paired = paired
 
-        self.landmarks_cache = [None] * len(self.images)
+        self.images_before, self.images_after = self.get_images()
+        self.landmarks_cache = {}
         self.landmarks_size = [72, 2]
-
-
-    def __len__(self):
-        """Returns the length of the dataset."""
-        return len(self.images)
-
-
-    def __getitem__(self, index):
-        """
-        Get the next data point from the dataset.
-
-        Args:
-            index: the index of the data point.
-
-        Returns:
-            The data point transformed and ready for consumption.
-        """
-
-        # Get path of before and after images
-        (image_name_before, image_name_after) = self.images[index]
-        path_before = os.path.join(self.dataset_dir, image_name_before)
-        path_after  = os.path.join(self.dataset_dir, image_name_after)
-
-        # Read images, convert to RGB
-        image_before = Image.open(path_before).convert("RGB")
-        image_after  = Image.open(path_after).convert("RGB")
-
-        # Create sample
-        sample = {
-            "before": image_before,
-            "after":  image_after
-        }
-
-        # Apply transformations on images
-        if self.transform is not None:
-            sample = self.transform(sample)
-
-        # Find landmarks, use cache if already done
-        if self.with_landmarks:
-            if self.landmarks_cache[index] is None:
-                landmarks = self.find_landmarks(sample)
-                self.landmarks_cache[index] = landmarks
-            else:
-                landmarks = self.landmarks_cache[index]
-
-            sample["landmarks"] = landmarks
-
-        return sample
 
 
     def get_images(self):
@@ -96,34 +49,103 @@ class MakeupDataset(Dataset):
         before_images = list(filter(lambda s: s.find("before") != -1, all_images))
         after_images = list(filter(lambda s: s.find("after") != -1, all_images))
 
-        return list(zip(sorted(before_images), sorted(after_images)))
+        return sorted(before_images), sorted(after_images)
 
 
-    def find_landmarks(self, sample):
+    def __len__(self):
+        """Returns the length of the dataset."""
+        return len(self.images_before)
+
+
+    def __getitem__(self, index):
         """
-        Find the landmarks of the images in the sample.
+        Get the next data point from the dataset.
 
         Args:
-            sample: A sample from the dataset.
+            index: the index of the data point.
 
         Returns:
-            The landmarks associated with the sample.
+            The data point transformed and ready for consumption.
+        """
+
+        # Sample before and after images
+        image_before = self.images_before[index]
+        if self.paired:
+            image_after = self.images_after[index]
+        else:
+            image_after = choice(self.images_after)
+
+        # Get path of before and after images
+        path_before = os.path.join(self.dataset_dir, image_before)
+        path_after  = os.path.join(self.dataset_dir, image_after)
+
+        # Create sample
+        sample = {
+            "before": Image.open(path_before).convert("RGB"),
+            "after":  Image.open(path_after).convert("RGB"),
+        }
+
+        # Apply transformations on images
+        if self.transform is not None:
+            sample = self.transform(sample)
+
+        # Find landmarks, use cache if already done
+        if self.with_landmarks:
+            sample["landmarks"] = {
+                "before": self.get_landmarks(image_before, sample["before"]),
+                "after":  self.get_landmarks(image_after,  sample["after"]),
+            }
+
+        return sample
+
+
+    def get_landmarks(self, label, image):
+        """
+        Get the landmarks associated with the label and image.
+        If label is not in landmarks' cache, find the landmarks in image.
+
+        Args:
+            label: The label of the image.
+            image: Image in PyTorch tensor format.
+
+        Returns:
+            Landmarks in PyTorch tensor format.
+        """
+
+        if label in self.landmarks_cache:
+            landmarks = self.landmarks_cache[label]
+        else:
+            landmarks = self.find_landmarks(image)
+            self.landmarks_cache[label] = landmarks
+        
+        return landmarks
+
+
+    def find_landmarks(self, image):
+        """
+        Find the landmarks of an image.
+
+        Args:
+            image: image in PyTorch tensor format.
+
+        Returns:
+            The landmarks of the image as a tensor.
         """
 
         unnormalize = lambda t: t * 0.5 + 0.5  # @XXX: hard-coded un-normalization
         to_uint8_rgb = lambda t: (255 * t).round().to(torch.uint8)
         torch_to_numpy = lambda t: t.permute(1, 2, 0).numpy()
 
-        landmarks = {}
+        # Image is a pytorch tensor, prepare it as an image in standard numpy format
+        image = torch_to_numpy(to_uint8_rgb(unnormalize(image)))
 
-        for label, image in sample.items():
-            # Image is a pytorch tensor, prepare it as an image in standard numpy format
-            image = torch_to_numpy(to_uint8_rgb(unnormalize(image)))
-            landmarks_found = face_landmarks(image)
-            if len(landmarks_found) > 0:
-                landmarks[label] = torch.tensor(dict_to_list(landmarks_found[0]), dtype=torch.int)
-            else:
-                landmarks[label] = torch.zeros(self.landmarks_size, dtype=torch.int)
+        # Find landmarks in the image
+        landmarks_found = face_landmarks(image)
+        # If found any, return first one as a tensor, else return zeros
+        if len(landmarks_found) > 0:
+            landmarks = torch.tensor(dict_to_list(landmarks_found[0]), dtype=torch.int)
+        else:
+            landmarks = torch.zeros(self.landmarks_size, dtype=torch.int)
 
         return landmarks
 
