@@ -14,7 +14,7 @@ def create_weights_init(conv_std=0.02, batchnorm_std=0.02):
         batchnorm_std: the standard deviation of the batch-norm layers.
     """
 
-    def weights_init_apply(module):
+    def weights_init(module):
         classname = module.__class__.__name__
         if classname.find('Conv') != -1:
             nn.init.normal_(module.weight.data, 0.0, conv_std)
@@ -22,16 +22,7 @@ def create_weights_init(conv_std=0.02, batchnorm_std=0.02):
             nn.init.normal_(module.weight.data, 1.0, batchnorm_std)
             nn.init.constant_(module.bias.data, 0)
 
-    return weights_init_apply
-
-
-def weights_init(module, conv_std=0.02, batchnorm_std=0.02):
-    classname = module.__class__.__name__
-    if classname.find('Conv') != -1:
-        nn.init.normal_(module.weight.data, 0.0, conv_std)
-    elif classname.find('BatchNorm') != -1:
-        nn.init.normal_(module.weight.data, 1.0, batchnorm_std)
-        nn.init.constant_(module.bias.data, 0)
+    return weights_init
 
 
 def init_optim(params, optim_choice="sgd", lr=1e-4, momentum=0.0, betas=(0.9, 0.999)):
