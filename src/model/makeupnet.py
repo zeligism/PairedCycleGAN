@@ -114,10 +114,3 @@ class StyleDiscriminator(DCGAN_Discriminator):
         super().__init__(*args, **kwargs)
 
 
-    def forward(self, reference_pair):
-
-        reference_pair = torch.cat(list(reference_pair), dim=1)
-
-        return super().forward(reference_pair)
-
-
