@@ -103,29 +103,37 @@ class GAN_Trainer(BaseTrainer):
             The result of the discriminator's classifications on real and fake data.
         """
 
-        # Sample real data from the dataset
+        # Train discriminator until we reach (modulo) D_iters iteration
+        train_D = self.iters % (self.D_iters + 1) > 0
+
+        # Sample real data from the dataset and latent
         real = sample["before"].to(self.device)
-        batch_size = real.size()[0]
+        latent = self.sample_latent()
 
-        # Train discriminator
-        latent = self.sample_latent(batch_size)
-        self.D_step(real, latent)
-
-        # If WGAN, clamp D's weights to ensure k-Lipschitzness
-        if self.model.gan_type == "wgan":
-            [p.data.clamp_(*clamp) for p in D.parameters()]
-
-        if self.iters % self.D_iters == 0:
-            # Train generator if we trained discriminator D_iters times
-            latent = self.sample_latent(batch_size)
-            self.G_step(latent)
+        # Train discriminator or generator
+        if train_D:
+            self.D_step(real, latent)
         else:
-            # Fill the current iter's spot with the previous value
+            self.G_step(latent)
+
+        # Fill the current iter's spot with the previous values if not trained
+        if not train_D:
+            self.add_data("D_loss", self.get_current_value("D_loss"))
+            self.add_data("D_on_real", self.get_current_value("D_on_real"))
+            self.add_data("D_on_fake1", self.get_current_value("D_on_fake1"))
+        else:
             self.add_data("G_loss", self.get_current_value("G_loss"))
             self.add_data("D_on_fake2", self.get_current_value("D_on_fake2"))
 
 
     def D_step(self, real, latent):
+        """
+        Makes a training step for the discriminator of the model.
+
+        Args:
+            real: Sample from the dataset.
+            latent: Sample from the latent space.
+        """
 
         D, G = self.model.D, self.model.G
 
@@ -134,7 +142,7 @@ class GAN_Trainer(BaseTrainer):
 
         # Sample fake data from a latent (ignore gradients)
         with torch.no_grad():
-            fake = G(latent).detach()  # @TODO: detach() redundant?
+            fake = G(latent)
 
         # Classify real and fake data
         D_on_real = D(real)
@@ -147,6 +155,10 @@ class GAN_Trainer(BaseTrainer):
         # Calculate gradients and minimize loss
         self.D_optim.step()
 
+        # If WGAN, clamp D's weights to ensure k-Lipschitzness
+        if self.model.gan_type == "wgan":
+            [p.data.clamp_(*clamp) for p in D.parameters()]
+
         # Record results
         self.add_data("D_loss", D_loss.mean().item())
         self.add_data("D_on_real", D_on_real.mean().item())
@@ -154,6 +166,12 @@ class GAN_Trainer(BaseTrainer):
 
 
     def G_step(self, latent):
+        """
+        Makes a training step for the generator of the model.
+
+        Args:
+            latent: Sample from the latent space.
+        """
 
         D, G = self.model.D, self.model.G
         
@@ -178,10 +196,16 @@ class GAN_Trainer(BaseTrainer):
         self.add_data("D_on_fake2", D_on_fake.mean().item())
 
 
-    def sample_latent(self, batch_size):
+    def sample_latent(self):
+        """
+        Samples from the latent space (i.e. input space of the generator).
 
-        # Calculate latent size and sample from Gaussian
-        latent_size = [batch_size, self.model.num_latents]
+        Returns:
+            Sample from the latent space.
+        """
+
+        # Calculate latent size and sample from normal distribution
+        latent_size = [self.batch_size, self.model.num_latents]
         latent = torch.randn(latent_size, device=self.device)
 
         return latent
@@ -256,7 +280,7 @@ class GAN_Trainer(BaseTrainer):
             self._generated_grids.append(grid)
 
 
-    def _report_training_stats(self, epoch, num_epochs, batch, num_batches, precision=3):
+    def report_training_stats(self, epoch, num_epochs, batch, num_batches, precision=3):
         """
         Reports/prints the training stats to the console.
 
