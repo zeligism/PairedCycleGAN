@@ -134,7 +134,7 @@ makeupnet:
     num_features: 64
     image_channels: 3
     image_size: 64
-    gan_type: gan
+    gan_type: wgan-gp
 
   trainer:
     batch_size: 4

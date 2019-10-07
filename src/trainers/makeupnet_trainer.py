@@ -69,6 +69,12 @@ class MakeupNetTrainer(BaseTrainer):
 
 
     def train_step(self, sample):
+        """
+        Makes ones training step.
+
+        Args:
+            sample: A sample from the dataset.
+        """
 
         print("Step: %d" % self.iters)
 
@@ -76,15 +82,23 @@ class MakeupNetTrainer(BaseTrainer):
         makeup_remover = self.model.remover
         makeup_style_D = self.model.style_D
 
-        # Train discriminator D_iters times then train generator
+        # Train discriminator D_iters times, else train generator
         train_D = self.iters % (self.D_iters + 1) > 0
 
         # Sample from dataset
         real_makeup = sample["after"].to(self.device)
         real_nomakeup = sample["before"].to(self.device)
+
+        # Get landmarks
         real_makeup_lm = sample["landmarks"]["after"]
         real_nomakeup_lm = sample["landmarks"]["before"]
 
+        # Morph makeup face to nomakeup face's facial structure for style loss calculation
+        mask, morphed_real_makeup = self.morph_makeup(real_makeup, real_nomakeup,
+                                                      real_makeup_lm, real_nomakeup_lm)
+
+
+        ##### Train D #####
 
         if train_D:
 
@@ -93,32 +107,18 @@ class MakeupNetTrainer(BaseTrainer):
                 fake_makeup = makeup_applier.G(real_nomakeup, real_makeup)
                 fake_nomakeup = makeup_remover.G(real_makeup)
 
-            # Morph makeup face to nomakeup face's facial structure for style loss calculation
-            mask, morphed_real_makeup = self.morph_makeup(real_makeup, real_nomakeup,
-                                                          real_makeup_lm, real_nomakeup_lm)
             # Prepare real same style pair vs. fake same style pair
-            real_style_pair = (mask * real_makeup, mask * morphed_real_makeup)
-            fake_style_pair = (mask * real_makeup, mask * fake_makeup)
-
-            ### D step ###
+            real_styles = torch.cat([mask * real_makeup , mask * morphed_real_makeup], dim=1)
+            fake_styles = torch.cat([mask * real_makeup , mask * fake_makeup], dim=1)
 
             # Zero gradients and loss
             self.optims_zero_grad("D")
 
-            # Initialize D's loss
-            D_loss = 0.
-
-            # Adversarial loss for makeup domain
-            D_loss += 0.1 * get_D_loss(makeup_applier.D, real_makeup, fake_makeup,
-                                       gan_type=self.model.gan_type, gp_coeff=self.gp_coeff)
-
-            # Adversarial loss for no-makeup domain
-            D_loss += 0.1 * get_D_loss(makeup_remover.D, real_nomakeup, fake_nomakeup,
-                                       gan_type=self.model.gan_type, gp_coeff=self.gp_coeff)
-
-            # "Adversarial" loss for style domain (@XXX: gan_type shouldn't involve grad norm)
-            D_loss += 0.1 * get_D_loss(makeup_style_D, real_style_pair, fake_style_pair,
-                                       gan_type="gan", gp_coeff=self.gp_coeff)
+            # Adversarial losses for makeup domain, no-makeup domain, and styles domain
+            gan_configs = {"gan_type": self.model.gan_type, "gp_coeff": self.gp_coeff}
+            D_loss = 0.1 * get_D_loss(makeup_applier.D, real_makeup, fake_makeup, **gan_configs) \
+                   + 0.1 * get_D_loss(makeup_remover.D, real_nomakeup, fake_nomakeup, **gan_configs) \
+                   + 0.1 * get_D_loss(makeup_style_D, real_styles, fake_styles, **gan_configs)
 
             # Calculate gradients
             D_loss.backward()
@@ -126,10 +126,11 @@ class MakeupNetTrainer(BaseTrainer):
             # Make a step of minimizing D's loss
             self.optims_step("D")
 
-            ### End of D step ###
-
+            # Record data
             self.add_data("D_loss", D_loss)
 
+
+        ##### Train G #####
 
         else:
 
@@ -137,30 +138,18 @@ class MakeupNetTrainer(BaseTrainer):
             fake_makeup = makeup_applier.G(real_nomakeup, real_makeup)
             fake_nomakeup = makeup_remover.G(real_makeup)
 
-            # Morph makeup face to nomakeup face's facial structure for style loss calculation
-            mask, morphed_real_makeup = self.morph_makeup(real_makeup, real_nomakeup,
-                                                          real_makeup_lm, real_nomakeup_lm)
             # Prepare real same style pair vs. fake same style pair
-            real_style_pair = (mask * real_makeup, mask * morphed_real_makeup)
-            fake_style_pair = (mask * real_makeup, mask * fake_makeup)
-
-
-            ### G step ###
+            real_styles = torch.cat([mask * real_makeup , mask * morphed_real_makeup], dim=1)
+            fake_styles = torch.cat([mask * real_makeup , mask * fake_makeup], dim=1)
 
             # Zero gradients
             self.optims_zero_grad("G")
 
-            # Initialize G's loss
-            G_loss = 0.
-
-            # Adversarial loss for makeup domain
-            G_loss += 0.1 * get_G_loss(makeup_applier.D, fake_makeup, gan_type=self.model.gan_type)
-
-            # Adversarial loss for no-makeup domain
-            G_loss += 0.1 * get_G_loss(makeup_remover.D, fake_nomakeup, gan_type=self.model.gan_type)
-
-            # Adversarial loss for style domain (@XXX: same as style's D_loss)
-            G_loss += 0.1 * get_G_loss(makeup_style_D, fake_style_pair, gan_type="gan")
+            # Adversarial loss for makeup domain, no-makeup domain, and style domain
+            gan_configs = {"gan_type": self.model.gan_type}
+            G_loss = 0.1 * get_G_loss(makeup_applier.D, fake_makeup, **gan_configs) \
+                   + 0.1 * get_G_loss(makeup_remover.D, fake_nomakeup, **gan_configs) \
+                   + 0.1 * get_G_loss(makeup_style_D, fake_styles, **gan_configs)
 
             # Identity loss
             G_loss += F.l1_loss(real_nomakeup, makeup_remover.G(fake_makeup))
@@ -177,8 +166,7 @@ class MakeupNetTrainer(BaseTrainer):
             # Make a step of minimizing G's loss
             self.optims_step("G")
 
-            ### End of G step ###
-
+            # Record data
             self.add_data("G_loss", G_loss)
 
         
