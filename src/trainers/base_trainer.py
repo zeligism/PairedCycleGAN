@@ -5,7 +5,7 @@ import torch
 
 from pprint import pformat
 from collections import defaultdict
-from .utils.init_utils import weights_init
+from .utils.init_utils import create_weights_init
 
 
 class BaseTrainer:
@@ -16,9 +16,10 @@ class BaseTrainer:
         results_dir="results/",
         load_model_path=None,
         num_gpu=1,
-        num_workers=2,
+        num_workers=0,
         batch_size=4,
         stats_interval=10,
+        weights_init=create_weights_init(),
         description="no description given",
         **kwargs):
         """
@@ -59,7 +60,7 @@ class BaseTrainer:
             self.load_model(load_model_path)
         
         # Initialize device
-        using_cuda = torch.cuda.is_available() and num_gpu > 0
+        using_cuda = torch.cuda.is_available() and self.num_gpu > 0
         self.device = torch.device("cuda:0" if using_cuda else "cpu")
 
         # Move model to device and parallelize model if possible
@@ -141,6 +142,10 @@ class BaseTrainer:
         print("Finished training.")
 
 
+    def sample_dataset(self):
+        pass  # @XXX
+
+
     def train_step(self, sample):
         """
         Trains on a sample from the dataset.
@@ -148,7 +153,7 @@ class BaseTrainer:
         Args:
             sample: Real data points sampled from the dataset.
         """
-        raise NotImplementedError("train_step() should be implemented!")
+        pass
 
 
     def pre_train_step(self, epoch, num_epochs, batch, num_batches):
@@ -209,7 +214,7 @@ class BaseTrainer:
 
 
     def data(self):
-        return self._data
+        return self._data  # @TODO: docs.
 
 
     def get_data(self, label):
