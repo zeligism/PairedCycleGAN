@@ -6,6 +6,7 @@ import torch
 from pprint import pformat
 from collections import defaultdict
 from .utils.init_utils import create_weights_init
+from .utils.report_utils import plot_lines
 
 
 class BaseTrainer:
@@ -192,7 +193,7 @@ class BaseTrainer:
         Args:
             save_results: Results will be saved if True.
         """
-        pass
+        plot_lines(self.get_data_containing("loss"), title="Losses")
 
 
     def get_experiment_name(self, delimiter=", "):
