@@ -51,7 +51,7 @@ class DCGAN(nn.Module):
 
 
 class DCGAN_Discriminator(nn.Module):
-    """The discriminator of the MakeupNet"""
+    """The discriminator of a DCGAN"""
 
     def __init__(self, num_features, image_channels=3, image_size=64, gan_type="gan", max_features=512):
         super().__init__()
@@ -109,7 +109,7 @@ class DCGAN_DiscriminatorBlock(nn.Module):
 
 
 class DCGAN_Generator(nn.Module):
-    """The generator of the MakeupNet"""
+    """The generator of a DCGAN"""
 
     def __init__(self, num_latents, num_features, image_channels=3, image_size=64, gan_type="gan", max_features=512):
         super().__init__()

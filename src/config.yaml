@@ -128,7 +128,7 @@ wgan-gp:
 makeupnet:
   dataset:
     dataset_dir: "dataset/data/processing/faces"
-    with_landmarks: false
+    with_landmarks: true
 
   model:
     num_features: 64
@@ -149,9 +149,9 @@ makeupnet:
       lr: 1.0e-4
       #betas: [0.5, 0.9]
 
-    D_iters: 5
+    D_iters: 3
     gp_coeff: 10.
 
-    stats_interval: 1
+    stats_interval: 5
 
 

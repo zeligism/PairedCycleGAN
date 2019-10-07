@@ -5,10 +5,14 @@ import argparse
 import torch
 import torchvision.transforms as transforms
 
+import random
+import numpy as np
+
 from dataset.dataset import MakeupDataset
 from dataset.transforms import MakeupSampleTransform
 from model.makeupnet import _MakeupNet, MakeupNet
 from trainers.makeupnet_trainer import _MakeupNetTrainer, MakeupNetTrainer
+from trainers.utils.init_utils import create_weights_init
 
 # @TODO: add logging
 
@@ -17,6 +21,19 @@ DATASET_DIR = os.path.join(FILE_DIR, "dataset", "data", "processing", "faces")
 
 
 def load_config(config_key, config_file="config.yaml"):
+    """
+    Load a configuration given by config_key from config_file.
+
+    Args:
+        config_key: Name/label/key of the configuration.
+        config_file: Name of the config (yaml) file. Should be in current dir.
+
+    Returns:
+        The configurations as a dict.
+
+    Throws:
+        KeyError: if config_key is not found in the root level of the config.
+    """
     with open(config_file) as f:
         all_configs = yaml.load(f)
         try:
@@ -26,7 +43,12 @@ def load_config(config_key, config_file="config.yaml"):
 
 
 def get_dataset_args(args):
-    # Construct dataset parameters from args
+    """
+    Construct dataset's parameters from args.
+
+    Args:
+        args: Parsed arguments from command line.
+    """
     dataset_args = {
         "dataset_dir": args.dataset_dir,
         "with_landmarks": args.with_landmarks,
@@ -36,7 +58,12 @@ def get_dataset_args(args):
 
 
 def get_model_args(args):
-    # Construct model parameters from args
+    """
+    Construct model's parameters from args.
+
+    Args:
+        args: Parsed arguments from command line.
+    """
     model_args = {
         "num_latents": args.num_latents,
         "num_features": args.num_features,
@@ -49,8 +76,12 @@ def get_model_args(args):
 
 
 def get_trainer_args(args):
+    """
+    Construct trainer's parameters from args.
 
-    # Construct training parameters from args
+    Args:
+        args: Parsed arguments from command line.
+    """
     trainer_args = {
         "name": args.trainer_name,
         "results_dir": args.results_dir,
@@ -82,6 +113,22 @@ def get_trainer_args(args):
     return trainer_args
 
 
+def set_random_seed(seed):
+    """
+    Sets all the random seeds to `seed`.
+
+    Args:
+        seed: Initial random seed.
+    """
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.deterministic = True
+
+
 def main(args):
     """
     Trains the MakeupNet on MakeupDataset using MakeupNetTrainer.
@@ -90,32 +137,38 @@ def main(args):
         args: The arguments passed from the command prompt (see below for more info).
     """
 
-    torch.manual_seed(args.random_seed)
+    set_random_seed(args.random_seed)
 
-    # Define data transformation
-    def make_transform(image_size):
-        transform_sequence = list(map(MakeupSampleTransform, [
-            transforms.Resize((image_size, image_size)),
-            transforms.ColorJitter(brightness=0.1),
-            transforms.ToTensor(),
-            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-        ]))
-        return transforms.Compose(transform_sequence)
-
-    # Start initializing dataset, model, and trainer
+    # Initialize args for dataset, model, and trainer
     if args.config is not None:
         config = load_config(args.config)
-        transform = make_transform(config["model"]["image_size"])
-        dataset = MakeupDataset(**config["dataset"], transform=transform)
-        model = MakeupNet(**config["model"])
-        trainer = MakeupNetTrainer(model, dataset, **config["trainer"])
+        dataset_args = config["dataset"]
+        model_args = config["model"]
+        trainer_args = config["trainer"]
     else:
-        transform = make_transform(args.image_size)
-        dataset = MakeupDataset(**get_dataset_args(args), transform=transform)
-        model = MakeupNet(**get_model_args(args))
-        trainer = MakeupNetTrainer(model, dataset, **get_trainer_args(args))
+        dataset_args = get_dataset_args(args)
+        model_args = get_model_args(args)
+        trainer_args = get_trainer_args(args)
 
-    # Train MakeupNet
+    # Define data transformation
+    image_size = model_args["image_size"]
+    transform_sequence = list(map(MakeupSampleTransform, [
+        transforms.Resize((image_size, image_size)),
+        transforms.ColorJitter(brightness=0.1),
+        transforms.ToTensor(),
+        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+    ]))
+    transform = transforms.Compose(transform_sequence)
+
+    # Define weights initialization method
+    weights_init = create_weights_init()
+
+    # Initialize dataset, model, and trainer
+    dataset = MakeupDataset(**dataset_args, transform=transform)
+    model = MakeupNet(**model_args)
+    trainer = MakeupNetTrainer(model, dataset, **trainer_args, weights_init=weights_init)
+
+    # Train model on dataset using trainer
     trainer.run(num_epochs=args.num_epochs, save_results=args.save_results)
 
 
@@ -143,9 +196,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="train MakeupNet on MakeupDataset using MakeupNetTrainer.")
 
     parser.add_argument("--config", type=str,
-        help="The index of the configurations of dataset, model, and trainer as defined in 'config.yaml'. "
-             "This will override all given args for dataset, model, and trainer. "
-             "In other words, only use --config along with --random_seed, --num_epochs, and --save_results.")
+        help="The key of the configurations of dataset, model, and trainer as defined in 'config.yaml'. "
+             "This will override all given args for dataset, model, and trainer.")
 
     parser.add_argument("--random_seed", type=int, default=123,
         help="random seed.")
@@ -217,7 +269,7 @@ if __name__ == "__main__":
         help="the interval in which the progress of the generator will be checked and recorded.")
 
     ### Trainer.run() ###
-    parser.add_argument("--num_epochs", type=positive(int), default=1,
+    parser.add_argument("--num_epochs", type=positive(int), default=5,
         help="number of training epochs (i.e. full runs on the dataset).")
     parser.add_argument("--save_results", action="store_true",
         help="save the results of the experiment.")
