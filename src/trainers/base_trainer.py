@@ -53,7 +53,13 @@ class BaseTrainer:
         self.stats_interval = stats_interval
         self.description = description
 
-        self.iters = 1  # current iteration
+        self.iters = 1  # current iteration (i.e. # of batches processed so far)
+        self.batch = 1  # current batch
+        self.epoch = 1  # current epoch
+        self.num_batches = 1 + len(self.dataset) // self.batch_size  # num of batches per epoch
+        self.num_epochs = 0  # number of epochs to run
+
+        self._dataset_sampler = iter(())  # generates samples from the dataset
         self._data = defaultdict(list)  # contains data of experiment
 
         # Load model if necessary
@@ -89,7 +95,7 @@ class BaseTrainer:
 
     def run(self, num_epochs, save_results=False):
         """
-        Runs the trainer. Trainer will train the model then save it.
+        Runs the trainer. Trainer will train the model and then save it.
         Note that running trainer more than once will accumulate the results.
 
         Args:
@@ -97,92 +103,98 @@ class BaseTrainer:
             save_results: A flag indicating whether we should save the results this run.
         """
 
-        # Initialize data loader
-        data_loader = torch.utils.data.DataLoader(self.dataset,
-            batch_size=self.batch_size, shuffle=True, num_workers=self.num_workers)
-
         try:
             # Try training the model
-            self.train(data_loader, num_epochs)
+            self.train(num_epochs)
         finally:
-            # Stop trainer, report results
+            # Always stop trainer and report results
             self.stop(save_results)
 
 
-    def train(self, data_loader, num_epochs):
+    def train(self, num_epochs):
         """
-        Trains `self.model` on data loaded from data loader.
+        Train model on dataset for `num_epochs` epochs.
 
         Args:
-            data_loader: An iterator from which the data is sampled.
             num_epochs: Number of epochs to run.
         """
 
-        num_batches = len(data_loader)
+        self.num_epochs = num_epochs
 
-        print("Starting Training Loop...")
+        # Train until dataset sampler is exhausted (i.e. until it throws StopIteration)
+        self.init_dataset_sampler()
 
-        # For each epoch
-        for epoch in range(1, num_epochs + 1):
-            for batch, sample in enumerate(data_loader, 1):
-
-                # Do things before training step (check progress, record data, etc)
-                self.pre_train_step(epoch, num_epochs, batch, num_batches)
-
-                # Train model on the sample
-                self.train_step(sample)
-
-                # Do things after training step (check progress, record data, etc)
-                self.post_train_step(epoch, num_epochs, batch, num_batches)
-
+        try:
+            print("Starting Training Loop...")
+            while True:
+                # One training step/iteration
+                self.pre_train_step()
+                self.train_step()
+                self.post_train_step()
                 self.iters += 1
 
-        # Do a post-training step at the end as well
-        self.post_train_step(num_batches, num_batches, num_epochs, num_epochs)
+        except StopIteration:
+            print("Finished training.")
 
-        print("Finished training.")
+
+    def data_generator(self, num_epochs):
+        """
+        A generator that yields data from the dataset, exhausting it `num_epochs` times.
+
+        Args:
+            num_epochs: Number of epochs.
+        """
+
+        data_loader_config = {
+            "batch_size": self.batch_size,
+            "shuffle": True,
+            "num_workers": self.num_workers,
+        }
+
+        for self.epoch in range(1, num_epochs + 1):
+            data_loader = torch.utils.data.DataLoader(self.dataset, **data_loader_config)
+            for self.batch, sample in enumerate(data_loader, 1):
+                yield sample
+
+
+    def init_dataset_sampler(self):
+        """
+        Initializes the sampler (or iterator) of the dataset.
+        """
+        self._dataset_sampler = iter(self.data_generator(self.num_epochs))
 
 
     def sample_dataset(self):
-        pass  # @XXX
-
-
-    def train_step(self, sample):
         """
-        Trains on a sample from the dataset.
+        Samples the dataset.
 
-        Args:
-            sample: Real data points sampled from the dataset.
+        Returns:
+            A sample from the dataset.
+        """
+        return next(self._dataset_sampler)
+
+
+    def train_step(self):
+        """
+        Makes one training step.
         """
         pass
 
 
-    def pre_train_step(self, epoch, num_epochs, batch, num_batches):
+    def pre_train_step(self):
         """
         The training preparation, or what happens before each training step.
-
-        Args:
-            epoch: Current epoch.
-            num_epochs: Number of epochs to run.
-            batch: Current batch.
-            num_batches: Number of batches to run.
         """
         pass
 
 
-    def post_train_step(self, epoch, num_epochs, batch, num_batches):
+    def post_train_step(self):
         """
         The training checkpoint, or what happens after each training step.
-
-        Args:
-            epoch: Current epoch.
-            num_epochs: Number of epochs to run.
-            batch: Current batch.
-            num_batches: Number of batches to run.
         """
         # Report training stats
-        if batch % self.stats_interval == 0:
-            self.report_training_stats(epoch, num_epochs, batch, num_batches)
+        if self.batch % self.stats_interval == 0:
+            self.report_training_stats()
 
 
     def stop(self, save_results=False):
@@ -214,34 +226,14 @@ class BaseTrainer:
         return "[{}] {}".format(timestamp, experiment)
 
 
-    def data(self):
-        return self._data  # @TODO: docs.
-
-
-    def get_data(self, label):
-        return self._data[label]
-
-
-    def get_current_value(self, label):
-        return self._data[label][-1] if len(self._data[label]) > 0 else None
-
-
-    def get_data_containing(self, phrase):
-        return {k: v for k, v in self._data.items() if k.find(phrase) != -1}
-
-
-    def add_data(self, label, value):
-        self._data[label].append(value)
-
-
-    def clear_data(self, label):
-        self._data[label] = []
-
-
-    def report_training_stats(self, epoch, num_epochs, batch, num_batches, precision=3):
+    def report_training_stats(self, precision=3):
+        """
+        Default training stats report.
+        Prints the current value of each data list recorded.
+        """
 
         # Progress of training
-        progress = f"[{epoch}/{num_epochs}][{batch}/{num_batches}]  "
+        progress = f"[{self.epoch}/{self.num_epochs}][{self.batch}/{self.num_batches}]  "
 
         # Show the stat of an item
         item_stat = lambda item: f"{item[0]} = {item[1][-1]:.{precision}f}"
@@ -249,8 +241,65 @@ class BaseTrainer:
         stats = ",  ".join(map(item_stat, self._data.items()))
 
         report = progress + stats
-        
+
         print(report)
+
+
+    def get_current_value(self, label):
+        """
+        Get the current value of the quantity given by `label`.
+
+        Args:
+            label: Name/label of the data/quantity.
+
+        Returns:
+            The current value of the quantity given by `label`.
+        """
+        return self._data[label][-1] if len(self._data[label]) > 0 else None
+
+
+    def get_data_containing(self, phrase):
+        """
+        Get the data lists that contain `phrase` in their names/labels.
+
+        Args:
+            phrase: A phrase to find in the label of the data, such as "loss".
+
+        Returns:
+            A dict containing the data lists that contain `phrase` in their labels.
+        """
+        return {k: v for k, v in self._data.items() if k.find(phrase) != -1}
+
+
+    def add_data(self, **kwargs):
+        """
+        Adds/appends a value to the list given by `label`.
+
+        Args:
+            kwargs: Dict of values to be added to data lists corresponding to their labels.
+        """
+        for key, value in kwargs.items():
+            self._data[key].append(value)
+
+
+    def clear_data(self, label):
+        """
+        Clears the data list given by `label`.
+
+        Args:
+            label: Name/label of the data list.
+        """
+        self._data[label] = []
+
+
+    def forward_fill_data(self):  # @XXX
+        """
+        Fills all the data lists by their last values until the data lists
+        have a length of `self.iters`.
+        """
+        for label in self._data:
+            remaning = self.iters - len(self._data[label])
+            self._data[label] += remaning * [self.get_current_value(label)]
 
 
     def __repr__(self):

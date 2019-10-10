@@ -56,11 +56,12 @@ class GAN_Trainer(BaseTrainer):
 
     #################### Training Methods ####################
 
-    def train_step(self, sample):
+    def train_step(self):
         """
-        Trains on a sample of real and fake data.
-        Throughout this file, we will denote a sample from the real data
-        distribution, fake data distribution, and latent variables as:
+        Makes one training step.
+        Throughout this doc, we will denote a sample from the real data
+        distribution, fake data distribution, and latent variables respectively
+        as follows:
             x ~ real,    x_g ~ fake,    z ~ latent
 
         Now recall that in order to train a GAN, we try to find a solution to
@@ -94,36 +95,23 @@ class GAN_Trainer(BaseTrainer):
         GAN:     https://arxiv.org/pdf/1406.2661.pdf
         WGAN:    https://arxiv.org/pdf/1701.07875.pdf
         WGAN-GP: https://arxiv.org/pdf/1704.00028.pdf
-
-
-        Args:
-            sample: Real data points sampled from the dataset.
-
-        Returns:
-            The result of the discriminator's classifications on real and fake data.
         """
 
-        # Train discriminator until we reach (modulo) D_iters iteration
-        train_D = self.iters % (self.D_iters + 1) > 0
+        for _ in range(self.D_iters):
+            # Sample real data from the dataset
+            sample = self.sample_dataset()
+            real = sample["before"].to(self.device)  # @XXX
 
-        # Sample real data from the dataset and latent
-        real = sample["before"].to(self.device)
+            # Sample latent and train discriminator
+            latent = self.sample_latent()
+            D_results = self.D_step(real, latent)
+
+        # Sample latent and train generator
         latent = self.sample_latent()
-
-        # Train discriminator or generator
-        if train_D:
-            self.D_step(real, latent)
-        else:
-            self.G_step(latent)
-
-        # Fill the current iter's spot with the previous values if not trained
-        if not train_D:
-            self.add_data("D_loss", self.get_current_value("D_loss"))
-            self.add_data("D_on_real", self.get_current_value("D_on_real"))
-            self.add_data("D_on_fake1", self.get_current_value("D_on_fake1"))
-        else:
-            self.add_data("G_loss", self.get_current_value("G_loss"))
-            self.add_data("D_on_fake2", self.get_current_value("D_on_fake2"))
+        G_results = self.G_step(latent)
+        
+        # Record data
+        self.add_data(**D_results, **G_results)
 
 
     def D_step(self, real, latent):
@@ -133,6 +121,9 @@ class GAN_Trainer(BaseTrainer):
         Args:
             real: Sample from the dataset.
             latent: Sample from the latent space.
+
+        Returns:
+            D loss and evaluation of D on real and on fake.
         """
 
         D, G = self.model.D, self.model.G
@@ -159,10 +150,11 @@ class GAN_Trainer(BaseTrainer):
         if self.model.gan_type == "wgan":
             [p.data.clamp_(*clamp) for p in D.parameters()]
 
-        # Record results
-        self.add_data("D_loss", D_loss.mean().item())
-        self.add_data("D_on_real", D_on_real.mean().item())
-        self.add_data("D_on_fake1", D_on_fake.mean().item())
+        return {
+            "D_loss": D_loss.mean().item(),
+            "D_on_real": D_on_real.mean().item(),
+            "D_on_fake1": D_on_fake.mean().item()
+        }
 
 
     def G_step(self, latent):
@@ -171,6 +163,9 @@ class GAN_Trainer(BaseTrainer):
 
         Args:
             latent: Sample from the latent space.
+        
+        Returns:
+            G loss and evaluation of D on fake.
         """
 
         D, G = self.model.D, self.model.G
@@ -192,8 +187,10 @@ class GAN_Trainer(BaseTrainer):
         self.G_optim.step()
 
         # Record results
-        self.add_data("G_loss", G_loss.mean().item())
-        self.add_data("D_on_fake2", D_on_fake.mean().item())
+        return {
+            "G_loss": G_loss.mean().item(),
+            "D_on_fake2": D_on_fake.mean().item(),
+        }
 
 
     def sample_latent(self):
@@ -259,36 +256,31 @@ class GAN_Trainer(BaseTrainer):
             f.write(self.__repr__())
 
 
-    def post_train_step(self, epoch, num_epochs, batch, num_batches):
+    def post_train_step(self):
         """
         The post-training step.
-
-        Args:
-            epoch: Current epoch.
-            num_epochs: Number of epochs to run.
-            batch: Current batch.
-            num_batches: Number of batches to run.
         """
 
+        should_report_stats = self.batch % self.stats_interval == 0
+        should_generate_grid = self.iters % self.generate_grid_interval == 0
+        finished_epoch = self.batch == self.num_batches
+        #finished_training = finished_epoch and self.epoch == self.num_epochs
+
         # Report training stats
-        if batch % self.stats_interval == 0:
-            self.report_training_stats(epoch, num_epochs, batch, num_batches)
+        if should_report_stats or finished_epoch:
+            self.report_training_stats()
 
         # Check generator's progress by recording its output on a fixed input
-        if self.iters % self.generate_grid_interval == 0:
+        if should_generate_grid:
             grid = generate_grid(self.model.G, self._fixed_latent)
             self._generated_grids.append(grid)
 
 
-    def report_training_stats(self, epoch, num_epochs, batch, num_batches, precision=3):
+    def report_training_stats(self, precision=3):
         """
         Reports/prints the training stats to the console.
 
         Args:
-            epoch: Current epoch.
-            num_epochs: Max number of epochs.
-            batch: Index of the current batch.
-            num_batches: Max number of batches.
             precision: Precision of the float numbers reported.
         """
 
@@ -296,19 +288,19 @@ class GAN_Trainer(BaseTrainer):
             "[{epoch}/{num_epochs}][{batch}/{num_batches}]\t" \
             "Loss of D = {D_loss:.{p}f}\t" \
             "Loss of G = {G_loss:.{p}f}\t" \
-            "D(x) = {D_of_x:.{p}f}\t" \
-            "D(G(z)) = {D_of_G_z1:.{p}f} / {D_of_G_z2:.{p}f}"
+            "D(x) = {D_on_real:.{p}f}\t" \
+            "D(G(z)) = {D_on_fake1:.{p}f} / {D_on_fake2:.{p}f}"
 
         stats = {
-            "epoch": epoch,
-            "num_epochs": num_epochs,
-            "batch": batch,
-            "num_batches": num_batches,
+            "epoch": self.epoch,
+            "num_epochs": self.num_epochs,
+            "batch": self.batch,
+            "num_batches": self.num_batches,
             "D_loss": self.get_current_value("D_loss"),
             "G_loss": self.get_current_value("G_loss"),
-            "D_of_x": self.get_current_value("D_on_real"),
-            "D_of_G_z1": self.get_current_value("D_on_fake1"),
-            "D_of_G_z2": self.get_current_value("D_on_fake2"),
+            "D_on_real": self.get_current_value("D_on_real"),
+            "D_on_fake1": self.get_current_value("D_on_fake1"),
+            "D_on_fake2": self.get_current_value("D_on_fake2"),
             "p": precision,
         }
 
