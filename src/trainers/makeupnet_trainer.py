@@ -57,15 +57,25 @@ class MakeupNetTrainer(BaseTrainer):
 
 
     def optims_zero_grad(self, D_or_G):
-        for optim in self.optims:
-            if D_or_G in optim:
-                optim[D_or_G].zero_grad()
+        """
+        Zero gradients in all D optimizers or G optimizers.
+
+        Args:
+            D_or_G: Indicates whether the operation is for D optims or G optims.
+                    Should be either "D" or "G".
+        """
+        [optim[D_or_G].zero_grad() for optim in self.optims if D_or_G in optim]
 
 
     def optims_step(self, D_or_G):
-        for optim in self.optims:
-            if D_or_G in optim:
-                optim[D_or_G].step()
+        """
+        Make an optimization step in all D optimizers or G optimizers.
+
+        Args:
+            D_or_G: Indicates whether the operation is for D optims or G optims.
+                    Should be either "D" or "G".
+        """
+        [optim[D_or_G].step() for optim in self.optims if D_or_G in optim]
 
 
     def train_step(self, sample):

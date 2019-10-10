@@ -125,7 +125,7 @@ wgan-gp:
 
 
 ####################################
-makeupnet:
+makeup:
   dataset:
     dataset_dir: "dataset/data/processing/faces"
     with_landmarks: true
