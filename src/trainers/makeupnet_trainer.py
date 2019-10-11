@@ -78,7 +78,7 @@ class MakeupNetTrainer(BaseTrainer):
         [optim[D_or_G].step() for optim in self.optims if D_or_G in optim]
 
 
-    def train_step(self, sample):
+    def train_step(self):
         """
         Makes ones training step.
 
@@ -88,105 +88,112 @@ class MakeupNetTrainer(BaseTrainer):
 
         print("Step: %d" % self.iters)
 
-        makeup_applier = self.model.applier
-        makeup_remover = self.model.remover
-        makeup_style_D = self.model.style_D
+        ### Train D ###
+        for _ in range(self.D_iters):
+            # Sample from dataset
+            sample = self.sample_dataset()
+            # Unpack
+            real_makeup = sample["after"].to(self.device)
+            real_nomakeup = sample["before"].to(self.device)
+            makeup_lm = sample["landmarks"]["after"]
+            nomakeup_lm = sample["landmarks"]["before"]
+            # Train
+            D_loss = self.D_step(real_makeup, real_nomakeup, makeup_lm, nomakeup_lm)
 
-        # Train discriminator D_iters times, else train generator
-        train_D = self.iters % (self.D_iters + 1) > 0
-
+        ### Train G ###
         # Sample from dataset
+        sample = self.sample_dataset()
+        # Unpack
         real_makeup = sample["after"].to(self.device)
         real_nomakeup = sample["before"].to(self.device)
+        # Train
+        G_loss = self.G_step(real_makeup, real_nomakeup)
 
-        # Get landmarks
-        real_makeup_lm = sample["landmarks"]["after"]
-        real_nomakeup_lm = sample["landmarks"]["before"]
+        # Record data
+        self.add_data(D_loss=D_loss, G_loss=G_loss)
 
+
+    def D_step(self, real_makeup, real_nomakeup, makeup_lm, nomakeup_lm):
+
+        # Sample from generators
+        with torch.no_grad():
+            fake_makeup = self.model.applier.G(real_nomakeup, real_makeup)
+            fake_nomakeup = self.model.remover.G(real_makeup)
+
+        real_styles = self.sample_real_styles(real_makeup, real_nomakeup, makeup_lm, nomakeup_lm)
+        fake_styles = self.sample_fake_styles(real_makeup, fake_makeup)
+
+        # Zero gradients and loss
+        self.optims_zero_grad("D")
+
+        # Adversarial losses for makeup domain, no-makeup domain, and styles domain
+        gan_configs = {"gan_type": self.model.gan_type, "gp_coeff": self.gp_coeff}
+        D_loss = 0.1 * get_D_loss(self.model.applier.D, real_makeup, fake_makeup, **gan_configs)     \
+               + 0.1 * get_D_loss(self.model.remover.D, real_nomakeup, fake_nomakeup, **gan_configs) \
+               + 0.1 * get_D_loss(self.model.style_D, real_styles, fake_styles, **gan_configs)
+
+        # Calculate gradients
+        D_loss.backward()
+
+        # Make a step of minimizing D's loss
+        self.optims_step("D")
+
+        return D_loss
+
+
+    def G_step(self, real_makeup, real_nomakeup):
+
+        # Sample from generators
+        fake_makeup = self.model.applier.G(real_nomakeup, real_makeup)
+        fake_nomakeup = self.model.remover.G(real_makeup)
+
+        fake_styles = self.sample_fake_styles(real_makeup, fake_makeup)
+
+        # Zero gradients
+        self.optims_zero_grad("G")
+
+        # Adversarial loss for makeup domain, no-makeup domain, and style domain
+        gan_configs = {"gan_type": self.model.gan_type}
+        G_loss = 0.1 * get_G_loss(self.model.applier.D, fake_makeup, **gan_configs)   \
+               + 0.1 * get_G_loss(self.model.remover.D, fake_nomakeup, **gan_configs) \
+               + 0.1 * get_G_loss(self.model.style_D, fake_styles, **gan_configs)
+
+        # Identity loss
+        G_loss += F.l1_loss(real_nomakeup, self.model.remover.G(fake_makeup))
+
+        # Style loss (i.e. style is preserved in fake_makeup and well-removed in fake_nomakeup)
+        G_loss += F.l1_loss(real_makeup, self.model.applier.G(fake_nomakeup, fake_makeup))
+
+        # Extra sparsity-inducing regularization for makeup mask
+        G_loss += 0.1 * F.l1_loss(real_nomakeup, fake_makeup)
+
+        # Calculate gradients
+        G_loss.backward()
+
+        # Make a step of minimizing G's loss
+        self.optims_step("G")
+
+        return G_loss
+
+
+    def sample_real_styles(self, real_makeup, real_nomakeup, makeup_lm, nomakeup_lm):
         # Morph makeup face to nomakeup face's facial structure for style loss calculation
         mask, morphed_real_makeup = self.morph_makeup(real_makeup, real_nomakeup,
-                                                      real_makeup_lm, real_nomakeup_lm)
+                                                      makeup_lm, nomakeup_lm)
+
+        # Prepare real same style pair vs. fake same style pair
+        real_styles = torch.cat([mask * real_makeup , mask * morphed_real_makeup], dim=1)
+
+        return real_styles
 
 
-        ##### Train D #####
+    def sample_fake_styles(self, real_makeup, fake_makeup):
+        fake_styles = torch.cat([real_makeup , fake_makeup], dim=1)
 
-        if train_D:
-
-            # Sample from generators
-            with torch.no_grad():
-                fake_makeup = makeup_applier.G(real_nomakeup, real_makeup)
-                fake_nomakeup = makeup_remover.G(real_makeup)
-
-            # Prepare real same style pair vs. fake same style pair
-            real_styles = torch.cat([mask * real_makeup , mask * morphed_real_makeup], dim=1)
-            fake_styles = torch.cat([mask * real_makeup , mask * fake_makeup], dim=1)
-
-            # Zero gradients and loss
-            self.optims_zero_grad("D")
-
-            # Adversarial losses for makeup domain, no-makeup domain, and styles domain
-            gan_configs = {"gan_type": self.model.gan_type, "gp_coeff": self.gp_coeff}
-            D_loss = 0.1 * get_D_loss(makeup_applier.D, real_makeup, fake_makeup, **gan_configs) \
-                   + 0.1 * get_D_loss(makeup_remover.D, real_nomakeup, fake_nomakeup, **gan_configs) \
-                   + 0.1 * get_D_loss(makeup_style_D, real_styles, fake_styles, **gan_configs)
-
-            # Calculate gradients
-            D_loss.backward()
-
-            # Make a step of minimizing D's loss
-            self.optims_step("D")
-
-            # Record data
-            self.add_data("D_loss", D_loss)
+        return fake_styles
 
 
-        ##### Train G #####
-
-        else:
-
-            # Sample from generators
-            fake_makeup = makeup_applier.G(real_nomakeup, real_makeup)
-            fake_nomakeup = makeup_remover.G(real_makeup)
-
-            # Prepare real same style pair vs. fake same style pair
-            real_styles = torch.cat([mask * real_makeup , mask * morphed_real_makeup], dim=1)
-            fake_styles = torch.cat([mask * real_makeup , mask * fake_makeup], dim=1)
-
-            # Zero gradients
-            self.optims_zero_grad("G")
-
-            # Adversarial loss for makeup domain, no-makeup domain, and style domain
-            gan_configs = {"gan_type": self.model.gan_type}
-            G_loss = 0.1 * get_G_loss(makeup_applier.D, fake_makeup, **gan_configs) \
-                   + 0.1 * get_G_loss(makeup_remover.D, fake_nomakeup, **gan_configs) \
-                   + 0.1 * get_G_loss(makeup_style_D, fake_styles, **gan_configs)
-
-            # Identity loss
-            G_loss += F.l1_loss(real_nomakeup, makeup_remover.G(fake_makeup))
-
-            # Style loss (i.e. style is preserved in fake_makeup and well-removed in fake_nomakeup)
-            G_loss += F.l1_loss(real_makeup, makeup_applier.G(fake_nomakeup, fake_makeup))
-
-            # Extra sparsity-inducing regularization for makeup mask
-            G_loss += 0.1 * F.l1_loss(real_nomakeup, fake_makeup)
-
-            # Calculate gradients
-            G_loss.backward()
-
-            # Make a step of minimizing G's loss
-            self.optims_step("G")
-
-            # Record data
-            self.add_data("G_loss", G_loss)
-
-        
-        if not train_D:
-            self.add_data("D_loss", self.get_current_value("D_loss"))
-        else:
-            self.add_data("G_loss", self.get_current_value("G_loss"))
-
-
-    def morph_makeup(self, real_makeup, real_nomakeup, real_makeup_lm, real_nomakeup_lm):
+    def morph_makeup(self, real_makeup, real_nomakeup, makeup_lm, nomakeup_lm):
 
         tensor2D_to_points = lambda t: [(p[0].item(), p[1].item()) for p in t]
         torch_to_numpy = lambda t: t.permute(1, 2, 0).numpy()
@@ -198,14 +205,14 @@ class MakeupNetTrainer(BaseTrainer):
 
         for i in range(batch_size):
             # Zero mask for no landmarks
-            if real_makeup_lm[i].sum() == 0 or real_nomakeup_lm[i].sum() == 0:
+            if makeup_lm[i].sum() == 0 or nomakeup_lm[i].sum() == 0:
                 morphed_batch.append(torch.zeros_like(real_nomakeup[i]))
                 mask[i] = 0
             else:
                 morphed = face_morph(torch_to_numpy(real_makeup[i]),
                                      torch_to_numpy(real_nomakeup[i]),
-                                     tensor2D_to_points(real_makeup_lm[i]),
-                                     tensor2D_to_points(real_nomakeup_lm[i]))
+                                     tensor2D_to_points(makeup_lm[i]),
+                                     tensor2D_to_points(nomakeup_lm[i]))
                 morphed_batch.append(numpy_to_torch(morphed))
 
         return mask, torch.stack(morphed_batch).to(real_makeup)
