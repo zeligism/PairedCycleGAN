@@ -81,9 +81,6 @@ class MakeupNetTrainer(BaseTrainer):
     def train_step(self):
         """
         Makes ones training step.
-
-        Args:
-            sample: A sample from the dataset.
         """
 
         print("Step: %d" % self.iters)
@@ -93,43 +90,43 @@ class MakeupNetTrainer(BaseTrainer):
             # Sample from dataset
             sample = self.sample_dataset()
             # Unpack
-            real_makeup = sample["after"].to(self.device)
-            real_nomakeup = sample["before"].to(self.device)
-            makeup_lm = sample["landmarks"]["after"]
-            nomakeup_lm = sample["landmarks"]["before"]
+            real_after = sample["after"].to(self.device)
+            real_before = sample["before"].to(self.device)
+            lm_after = sample["landmarks"]["after"]
+            lm_before = sample["landmarks"]["before"]
             # Train
-            D_loss = self.D_step(real_makeup, real_nomakeup, makeup_lm, nomakeup_lm)
+            D_loss = self.D_step(real_after, real_before, lm_after, lm_before)
 
         ### Train G ###
         # Sample from dataset
         sample = self.sample_dataset()
         # Unpack
-        real_makeup = sample["after"].to(self.device)
-        real_nomakeup = sample["before"].to(self.device)
+        real_after = sample["after"].to(self.device)
+        real_before = sample["before"].to(self.device)
         # Train
-        G_loss = self.G_step(real_makeup, real_nomakeup)
+        G_loss = self.G_step(real_after, real_before)
 
         # Record data
         self.add_data(D_loss=D_loss, G_loss=G_loss)
 
 
-    def D_step(self, real_makeup, real_nomakeup, makeup_lm, nomakeup_lm):
+    def D_step(self, real_after, real_before, lm_after, lm_before):
 
         # Sample from generators
         with torch.no_grad():
-            fake_makeup = self.model.applier.G(real_nomakeup, real_makeup)
-            fake_nomakeup = self.model.remover.G(real_makeup)
+            fake_after = self.model.applier.G(real_before, real_after)
+            fake_before = self.model.remover.G(real_after)
 
-        real_styles = self.sample_real_styles(real_makeup, real_nomakeup, makeup_lm, nomakeup_lm)
-        fake_styles = self.sample_fake_styles(real_makeup, fake_makeup)
+        real_styles = self.sample_real_styles(real_after, real_before, lm_after, lm_before)
+        fake_styles = self.sample_fake_styles(real_after, fake_after)
 
         # Zero gradients and loss
         self.optims_zero_grad("D")
 
         # Adversarial losses for makeup domain, no-makeup domain, and styles domain
         gan_configs = {"gan_type": self.model.gan_type, "gp_coeff": self.gp_coeff}
-        D_loss = 0.1 * get_D_loss(self.model.applier.D, real_makeup, fake_makeup, **gan_configs)     \
-               + 0.1 * get_D_loss(self.model.remover.D, real_nomakeup, fake_nomakeup, **gan_configs) \
+        D_loss = 0.1 * get_D_loss(self.model.applier.D, real_after, fake_after, **gan_configs)     \
+               + 0.1 * get_D_loss(self.model.remover.D, real_before, fake_before, **gan_configs) \
                + 0.1 * get_D_loss(self.model.style_D, real_styles, fake_styles, **gan_configs)
 
         # Calculate gradients
@@ -141,31 +138,31 @@ class MakeupNetTrainer(BaseTrainer):
         return D_loss
 
 
-    def G_step(self, real_makeup, real_nomakeup):
+    def G_step(self, real_after, real_before):
 
         # Sample from generators
-        fake_makeup = self.model.applier.G(real_nomakeup, real_makeup)
-        fake_nomakeup = self.model.remover.G(real_makeup)
+        fake_after = self.model.applier.G(real_before, real_after)
+        fake_before = self.model.remover.G(real_after)
 
-        fake_styles = self.sample_fake_styles(real_makeup, fake_makeup)
+        fake_styles = self.sample_fake_styles(real_after, fake_after)
 
         # Zero gradients
         self.optims_zero_grad("G")
 
         # Adversarial loss for makeup domain, no-makeup domain, and style domain
         gan_configs = {"gan_type": self.model.gan_type}
-        G_loss = 0.1 * get_G_loss(self.model.applier.D, fake_makeup, **gan_configs)   \
-               + 0.1 * get_G_loss(self.model.remover.D, fake_nomakeup, **gan_configs) \
+        G_loss = 0.1 * get_G_loss(self.model.applier.D, fake_after, **gan_configs)   \
+               + 0.1 * get_G_loss(self.model.remover.D, fake_before, **gan_configs) \
                + 0.1 * get_G_loss(self.model.style_D, fake_styles, **gan_configs)
 
         # Identity loss
-        G_loss += F.l1_loss(real_nomakeup, self.model.remover.G(fake_makeup))
+        G_loss += F.l1_loss(real_before, self.model.remover.G(fake_after))
 
-        # Style loss (i.e. style is preserved in fake_makeup and well-removed in fake_nomakeup)
-        G_loss += F.l1_loss(real_makeup, self.model.applier.G(fake_nomakeup, fake_makeup))
+        # Style loss (i.e. style is preserved in fake_after and well-removed in fake_before)
+        G_loss += F.l1_loss(real_after, self.model.applier.G(fake_before, fake_after))
 
         # Extra sparsity-inducing regularization for makeup mask
-        G_loss += 0.1 * F.l1_loss(real_nomakeup, fake_makeup)
+        G_loss += 0.1 * F.l1_loss(real_before, fake_after)
 
         # Calculate gradients
         G_loss.backward()
@@ -176,46 +173,46 @@ class MakeupNetTrainer(BaseTrainer):
         return G_loss
 
 
-    def sample_real_styles(self, real_makeup, real_nomakeup, makeup_lm, nomakeup_lm):
+    def sample_real_styles(self, real_after, real_before, lm_after, lm_before):
         # Morph makeup face to nomakeup face's facial structure for style loss calculation
-        mask, morphed_real_makeup = self.morph_makeup(real_makeup, real_nomakeup,
-                                                      makeup_lm, nomakeup_lm)
+        mask, after2before = self.morph_makeup(real_after, real_before,
+                                               lm_after, lm_before)
 
         # Prepare real same style pair vs. fake same style pair
-        real_styles = torch.cat([mask * real_makeup , mask * morphed_real_makeup], dim=1)
+        real_styles = torch.cat([mask * real_after , mask * after2before], dim=1)
 
         return real_styles
 
 
-    def sample_fake_styles(self, real_makeup, fake_makeup):
-        fake_styles = torch.cat([real_makeup , fake_makeup], dim=1)
+    def sample_fake_styles(self, real_after, fake_after):
+        fake_styles = torch.cat([real_after , fake_after], dim=1)
 
         return fake_styles
 
 
-    def morph_makeup(self, real_makeup, real_nomakeup, makeup_lm, nomakeup_lm):
+    def morph_makeup(self, real_after, real_before, lm_after, lm_before):
 
         tensor2D_to_points = lambda t: [(p[0].item(), p[1].item()) for p in t]
         torch_to_numpy = lambda t: t.permute(1, 2, 0).numpy()
         numpy_to_torch = lambda t: torch.from_numpy(t).permute(2, 0, 1)
 
-        batch_size = real_makeup.size()[0]
-        mask = torch.ones([batch_size, 1, 1, 1]).to(real_makeup)
+        batch_size = real_after.size()[0]
+        mask = torch.ones([batch_size, 1, 1, 1]).to(real_after)
         morphed_batch = []
 
         for i in range(batch_size):
             # Zero mask for no landmarks
-            if makeup_lm[i].sum() == 0 or nomakeup_lm[i].sum() == 0:
-                morphed_batch.append(torch.zeros_like(real_nomakeup[i]))
+            if lm_after[i].sum() == 0 or lm_before[i].sum() == 0:
+                morphed_batch.append(torch.zeros_like(real_before[i]))
                 mask[i] = 0
             else:
-                morphed = face_morph(torch_to_numpy(real_makeup[i]),
-                                     torch_to_numpy(real_nomakeup[i]),
-                                     tensor2D_to_points(makeup_lm[i]),
-                                     tensor2D_to_points(nomakeup_lm[i]))
+                morphed = face_morph(torch_to_numpy(real_after[i]),
+                                     torch_to_numpy(real_before[i]),
+                                     tensor2D_to_points(lm_after[i]),
+                                     tensor2D_to_points(lm_before[i]))
                 morphed_batch.append(numpy_to_torch(morphed))
 
-        return mask, torch.stack(morphed_batch).to(real_makeup)
+        return mask, torch.stack(morphed_batch).to(real_after)
 
 
 
