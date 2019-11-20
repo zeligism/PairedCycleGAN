@@ -2,7 +2,7 @@
 import os
 import torch
 
-from random import choice
+from random import shuffle
 from PIL import Image
 from face_recognition import face_landmarks
 from torch.utils.data import Dataset
@@ -14,14 +14,15 @@ dict_to_list = lambda d: [x for l in d.values() for x in l]
 class MakeupDataset(Dataset):
     """A dataset of before-and-after makeup images."""
 
-    def __init__(self, dataset_dir, with_landmarks=False, transform=None, paired=True):
+    def __init__(self, dataset_dir, transform=None, with_landmarks=False, paired=False):
         """
         Initializes MakeupDataset.
 
         Args:
             dataset_dir: The directory of the dataset.
-            with_landmarks: A flag indicating whether landmarks should be used or not.
             transform: The transform used on the data.
+            with_landmarks: A flag indicating whether landmarks should be used or not.
+            paired: Indicates whether images should be paired when sampled or not.
         """
 
         if not os.path.isdir(dataset_dir):
@@ -68,12 +69,13 @@ class MakeupDataset(Dataset):
             The data point transformed and ready for consumption.
         """
 
+        # Shuffle the other list/dataset every time we reiterate from the beginning
+        if not self.paired and index == 0:
+            shuffle(self.images_after)
+
         # Sample before and after images
         image_before = self.images_before[index]
-        if self.paired:
-            image_after = self.images_after[index]
-        else:
-            image_after = choice(self.images_after)
+        image_after = self.images_after[index]
 
         # Get path of before and after images
         path_before = os.path.join(self.dataset_dir, image_before)

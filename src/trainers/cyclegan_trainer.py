@@ -113,7 +113,7 @@ class CycleGAN_Trainer(BaseTrainer):
                + 0.1 * get_D_loss(self.model.remover.D, real_before, fake_before, **gan_configs)
 
         # Calculate gradients
-        D_loss.remover()
+        D_loss.backward()
 
         # Make a step of minimizing D's loss
         self.optims_step("D")
@@ -142,7 +142,7 @@ class CycleGAN_Trainer(BaseTrainer):
         G_loss += 0.1 * F.l1_loss(real_before, fake_after)
 
         # Calculate gradients
-        G_loss.remover()
+        G_loss.backward()
 
         # Make a step of minimizing G's loss
         self.optims_step("G")

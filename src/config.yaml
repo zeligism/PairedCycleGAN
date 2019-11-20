@@ -2,7 +2,6 @@
 dcgan:
   dataset:
     dataset_dir: "dataset/data/processing/faces"
-    with_landmarks: false
 
   model:
     num_latents: 128
@@ -44,7 +43,6 @@ dcgan:
 wgan:
   dataset:
     dataset_dir: "dataset/data/processing/faces"
-    with_landmarks: false
 
   model:
     num_latents: 128
@@ -86,7 +84,6 @@ wgan:
 wgan-gp:
   dataset:
     dataset_dir: "dataset/data/processing/faces"
-    with_landmarks: false
 
   model:
     num_latents: 128
@@ -128,7 +125,6 @@ wgan-gp:
 makeup:
   dataset:
     dataset_dir: "dataset/data/processing/faces"
-    with_landmarks: true
 
   model:
     num_features: 64

@@ -2,6 +2,7 @@
 import torch.nn as nn
 
 from .dcgan import DCGAN
+from .maskgan import MaskGAN
 
 
 class CycleGAN(nn.Module):
@@ -27,4 +28,10 @@ class CycleGAN(nn.Module):
 
         self.applier = gan_class(**model_config)
         self.remover = gan_class(**model_config)
+
+
+class MaskCycleGAN(CycleGAN):
+    def __init__(self, *args, **kwargs):
+        kwargs["gan_class"] = MaskGAN
+        super().__init__(*args, **kwargs)
 

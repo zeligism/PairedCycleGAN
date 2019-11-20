@@ -9,7 +9,11 @@ import torchvision.transforms as transforms
 
 from dataset.dataset import MakeupDataset
 from dataset.transforms import MakeupSampleTransform
+
+from models.cyclegan import MaskCycleGAN
 from models.pairedcyclegan import PairedCycleGAN
+
+from trainers.cyclegan_trainer import CycleGAN_Trainer
 from trainers.pairedcyclegan_trainer import PairedCycleGAN_Trainer
 from trainers.utils.init_utils import create_weights_init
 
@@ -56,8 +60,6 @@ def parse_args():
     ### Dataset Args ###
     parser.add_argument("--dataset_dir", type=str, default=DATASET_DIR,
         help="directory of the makeup dataset.")
-    parser.add_argument("--with_landmarks", action="store_true",
-        help="use faces landmarks in training as well.")
 
     ### Model Args ###
     parser.add_argument("--num_latents", type=positive(int), default=128,
@@ -162,7 +164,6 @@ def get_dataset_args(args):
     """
     dataset_args = {
         "dataset_dir": args.dataset_dir,
-        "with_landmarks": args.with_landmarks,
     }
 
     return dataset_args
@@ -240,6 +241,39 @@ def set_random_seed(seed):
     torch.backends.cudnn.deterministic = True
 
 
+def get_training_args(args):
+    """
+    Return structured args for dataset, model, and trainer from parsed args.
+    """
+
+    if args.config is not None:
+        config = load_config(args.config)
+        dataset_args = config["dataset"]
+        model_args = config["model"]
+        trainer_args = config["trainer"]
+    else:
+        dataset_args = get_dataset_args(args)
+        model_args = get_model_args(args)
+        trainer_args = get_trainer_args(args)
+
+    return dataset_args, model_args, trainer_args
+
+
+def make_transform(image_size):
+    """
+    Make data transform and return it.
+    """
+    transform_sequence = list(map(MakeupSampleTransform, [
+        transforms.Resize((image_size, image_size)),
+        transforms.ColorJitter(brightness=0.1),
+        transforms.ToTensor(),
+        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+    ]))
+    transform = transforms.Compose(transform_sequence)
+
+    return transform
+
+
 def main(args):
     """
     Trains the MakeupNet on MakeupDataset using MakeupNetTrainer.
@@ -251,35 +285,31 @@ def main(args):
     set_random_seed(args.random_seed)
 
     # Initialize args for dataset, model, and trainer
-    if args.config is not None:
-        config = load_config(args.config)
-        dataset_args = config["dataset"]
-        model_args = config["model"]
-        trainer_args = config["trainer"]
-    else:
-        dataset_args = get_dataset_args(args)
-        model_args = get_model_args(args)
-        trainer_args = get_trainer_args(args)
+    dataset_args, model_args, trainer_args = get_training_args(args)
 
-    # Define data transformation
-    image_size = model_args["image_size"]
-    transform_sequence = list(map(MakeupSampleTransform, [
-        transforms.Resize((image_size, image_size)),
-        transforms.ColorJitter(brightness=0.1),
-        transforms.ToTensor(),
-        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-    ]))
-    transform = transforms.Compose(transform_sequence)
-
-    # Define weights initialization method
+    # Define data transformation and weights initializer
+    transform = make_transform(model_args["image_size"])
     weights_init = create_weights_init()
 
-    # Initialize dataset, model, and trainer
-    dataset = MakeupDataset(**dataset_args, transform=transform)
-    model = PairedCycleGAN(**model_args)
-    trainer = PairedCycleGAN_Trainer(model, dataset, **trainer_args, weights_init=weights_init)
 
-    # Train model on dataset using trainer
+    # Initialize datasets
+    unpaired_dataset = MakeupDataset(**dataset_args, transform=transform)
+    paired_dataset = MakeupDataset(**dataset_args, transform=transform,
+                                   with_landmarks=True, paired=True)
+
+    # Initialize models
+    pretrained_applier = MaskCycleGAN(**model_args)
+    makeupgan = PairedCycleGAN(**model_args)
+
+    # Pre-train makeup applier
+    subtrainer = CycleGAN_Trainer(pretrained_applier, unpaired_dataset,
+                                  **trainer_args, weights_init=weights_init)
+    subtrainer.run(num_epochs=args.num_epochs, save_results=args.save_results)
+
+    # Train MakeupGAN
+    makeupgan.applier = pretrained_applier
+    trainer = PairedCycleGAN_Trainer(makeupgan, paired_dataset,
+                                     **trainer_args, weights_init=weights_init)
     trainer.run(num_epochs=args.num_epochs, save_results=args.save_results)
 
 
