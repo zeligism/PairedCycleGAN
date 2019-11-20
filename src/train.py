@@ -2,28 +2,133 @@
 import os
 import yaml
 import argparse
+import random
+import numpy as np
 import torch
 import torchvision.transforms as transforms
 
-import random
-import numpy as np
-
 from dataset.dataset import MakeupDataset
 from dataset.transforms import MakeupSampleTransform
-from model.pairedcyclegan import PairedCycleGAN
+from models.pairedcyclegan import PairedCycleGAN
 from trainers.pairedcyclegan_trainer import PairedCycleGAN_Trainer
 from trainers.utils.init_utils import create_weights_init
-
-### Only for testing ###
-TEST = False
-from model.dcgan import DCGAN
-from trainers.gan_trainer import GAN_Trainer
 
 
 # @TODO: add logging
 
 FILE_DIR = os.path.dirname(os.path.realpath(__file__))
 DATASET_DIR = os.path.join(FILE_DIR, "dataset", "data", "processing", "faces")
+
+
+def parse_args():
+    """
+    Parse training args.
+    """
+
+    # Adding positive and non-negative types for arguments type check
+    def positive(type):    
+        def positive_number(value):
+            typed_value = type(value)
+            if not (typed_value > 0):
+                raise argparse.ArgumentTypeError(f"{value} is not a positive {type.__name__}.")
+            return typed_value
+        return positive_number
+
+    def nonnegative(type):    
+        def nonnegative_number(value):
+            typed_value = type(value)
+            if not (typed_value >= 0):
+                raise argparse.ArgumentTypeError(f"{value} is not a non-negative {type.__name__}.")
+            return typed_value
+        return nonnegative_number
+
+
+    # Initialize parser and add arguments
+    parser = argparse.ArgumentParser(description="Train a model on a dataset using a trainer.")
+
+    parser.add_argument("--config", type=str,
+        help="The key of the configurations of dataset, model, and trainer as defined in 'config.yaml'. "
+             "This will override all given args for dataset, model, and trainer.")
+
+    parser.add_argument("--random_seed", type=int, default=123,
+        help="random seed.")
+
+    ### Dataset Args ###
+    parser.add_argument("--dataset_dir", type=str, default=DATASET_DIR,
+        help="directory of the makeup dataset.")
+    parser.add_argument("--with_landmarks", action="store_true",
+        help="use faces landmarks in training as well.")
+
+    ### Model Args ###
+    parser.add_argument("--num_latents", type=positive(int), default=128,
+        help="number of latent factors from which an image will be generated.")
+    parser.add_argument("--num_features", type=positive(int), default=64,
+        help="number of features on the layers of the discriminator (and the generator as well).")
+    parser.add_argument("--image_channels", type=positive(int), default=3,
+        help="number of image channels in the dataset.")
+    parser.add_argument("--image_size", type=positive(int), default=64,
+        help="resize images to be of dimensions (image_size x image_size).")
+    parser.add_argument("--gan_type", type=str.lower, default="gan",
+        choices=("gan", "wgan", "wgan-gp"),
+        help="type of gan among GAN (default), WGAN (Wasserstein GAN), and WGAN-GP (WGAN with gradient penalty).")
+
+    ### Trainer Args ###
+    parser.add_argument("--trainer_name", type=str, default="trainer",
+        help="name of the model trainer (which is also the name of your experiment).")
+    parser.add_argument("--results_dir", type=str, default="results/",
+        help="directory where the results for each run will be saved.")
+    parser.add_argument("--load_model", type=str,
+        help="the path of the file where the model will be loaded and experiments will be saved.")
+    
+    parser.add_argument("--num_gpu", type=nonnegative(int), default=0,
+        help="number of GPUs to use, if any.")
+    parser.add_argument("--num_workers", type=nonnegative(int), default=0,
+        help="number of workers that will be loading the dataset.")
+    parser.add_argument("--batch_size", type=positive(int), default=4,
+        help="size of the batch sample from the dataset.")
+
+    parser.add_argument("--D_optimizer", type=str.lower, default="sgd",
+        help="the name of the optimizer used for training (SGD, Adam, RMSProp)",
+        choices=("sgd", "adam", "rmsprop"),)
+    parser.add_argument("--D_lr", type=float, default=1.0e-4,
+        help="the learning rate, which controls the size of the optimization update.")
+    parser.add_argument("--D_momentum", type=positive(float), default=0.0,
+        help="used in SGD and RMSProp optimizers.")
+    parser.add_argument("--D_betas", type=float, nargs=2, default=(0.9, 0.999),
+        help="used in Adam optimizer (see torch.optim.Adam for details).")
+
+    parser.add_argument("--G_optimizer", type=str.lower, default="sgd",
+        help="the name of the optimizer used for training (SGD, Adam, RMSProp)",
+        choices=("sgd", "adam", "rmsprop"),)
+    parser.add_argument("--G_lr", type=float, default=1.0e-4,
+        help="the learning rate, which controls the size of the optimization update.")
+    parser.add_argument("--G_momentum", type=positive(float), default=0.0,
+        help="used in SGD and RMSProp optimizers.")
+    parser.add_argument("--G_betas", type=float, nargs=2, default=(0.9, 0.999),
+        help="used in Adam optimizer (see torch.optim.Adam for details).")
+
+    parser.add_argument("--D_iters", type=positive(int), default=5,
+        help="number of iterations to train discriminator every batch.")
+    parser.add_argument("--clamp", type=float, nargs=2, default=(-0.01, 0.01),
+        help="used in WGAN for clamping the weights of the discriminator.")
+    parser.add_argument("--gp_coeff", type=float, default=10.0,
+        help="a coefficient to multiply with the gradient penalty in the loss of WGAN-GP.")
+
+    parser.add_argument("--stats_interval", type=positive(int), default=50,
+        help="the interval in which a report of the training stats will be shown to the console.")
+    parser.add_argument("--generate_grid_interval", type=positive(int), default=200,
+        help="the interval in which the progress of the generator will be checked and recorded.")
+
+    ### Trainer.run() ###
+    parser.add_argument("--num_epochs", type=positive(int), default=5,
+        help="number of training epochs (i.e. full runs on the dataset).")
+    parser.add_argument("--save_results", action="store_true",
+        help="save the results of the experiment.")
+
+    # Parse arguments
+    args = parser.parse_args()
+
+    return args
 
 
 def load_config(config_key, config_file="config.yaml"):
@@ -121,7 +226,7 @@ def get_trainer_args(args):
 
 def set_random_seed(seed):
     """
-    Sets all the random seeds to `seed`.
+    Sets all random seeds to `seed`.
 
     Args:
         seed: Initial random seed.
@@ -174,119 +279,11 @@ def main(args):
     model = PairedCycleGAN(**model_args)
     trainer = PairedCycleGAN_Trainer(model, dataset, **trainer_args, weights_init=weights_init)
 
-    if TEST:
-        model = DCGAN(**model_args)
-        trainer = GAN_Trainer(model, dataset, **trainer_args, weights_init=weights_init)
-
     # Train model on dataset using trainer
     trainer.run(num_epochs=args.num_epochs, save_results=args.save_results)
 
 
 if __name__ == "__main__":
-
-    # Adding positive and non-negative types for arguments type check
-    def positive(type):    
-        def positive_number(value):
-            typed_value = type(value)
-            if not (typed_value > 0):
-                raise argparse.ArgumentTypeError(f"{value} is not a positive {type.__name__}.")
-            return typed_value
-        return positive_number
-
-    def nonnegative(type):    
-        def nonnegative_number(value):
-            typed_value = type(value)
-            if not (typed_value >= 0):
-                raise argparse.ArgumentTypeError(f"{value} is not a non-negative {type.__name__}.")
-            return typed_value
-        return nonnegative_number
-
-
-    # Initialize parser and add arguments
-    parser = argparse.ArgumentParser(description="train MakeupNet on MakeupDataset using MakeupNetTrainer.")
-
-    parser.add_argument("--config", type=str,
-        help="The key of the configurations of dataset, model, and trainer as defined in 'config.yaml'. "
-             "This will override all given args for dataset, model, and trainer.")
-
-    parser.add_argument("--random_seed", type=int, default=123,
-        help="random seed.")
-
-    ### Dataset Args ###
-    parser.add_argument("--dataset_dir", type=str, default=DATASET_DIR,
-        help="directory of the makeup dataset.")
-    parser.add_argument("--with_landmarks", action="store_true",
-        help="use faces landmarks in training as well.")
-
-    ### Model Args ###
-    parser.add_argument("--num_latents", type=positive(int), default=128,
-        help="number of latent factors from which an image will be generated.")
-    parser.add_argument("--num_features", type=positive(int), default=64,
-        help="number of features on the layers of the discriminator (and the generator as well).")
-    parser.add_argument("--image_channels", type=positive(int), default=3,
-        help="number of image channels in the dataset.")
-    parser.add_argument("--image_size", type=positive(int), default=64,
-        help="resize images to be of dimensions (image_size x image_size).")
-    parser.add_argument("--gan_type", type=str.lower, default="gan",
-        choices=("gan", "wgan", "wgan-gp"),
-        help="type of gan among GAN (default), WGAN (Wasserstein GAN), and WGAN-GP (WGAN with gradient penalty).")
-
-    ### Trainer Args ###
-    parser.add_argument("--trainer_name", type=str, default="trainer",
-        help="name of the model trainer (which is also the name of your experiment).")
-    parser.add_argument("--results_dir", type=str, default="results/",
-        help="directory where the results for each run will be saved.")
-    parser.add_argument("--load_model", type=str,
-        help="the path of the file where the model will be loaded and experiments will be saved.")
-    
-    parser.add_argument("--num_gpu", type=nonnegative(int), default=0,
-        help="number of GPUs to use, if any.")
-    parser.add_argument("--num_workers", type=nonnegative(int), default=0,
-        help="number of workers that will be loading the dataset.")
-    parser.add_argument("--batch_size", type=positive(int), default=4,
-        help="size of the batch sample from the dataset.")
-
-    parser.add_argument("--D_optimizer", type=str.lower, default="sgd",
-        help="the name of the optimizer used for training (SGD, Adam, RMSProp)",
-        choices=("sgd", "adam", "rmsprop"),)
-    parser.add_argument("--D_lr", type=float, default=1.0e-4,
-        help="the learning rate, which controls the size of the optimization update.")
-    parser.add_argument("--D_momentum", type=positive(float), default=0.0,
-        help="used in SGD and RMSProp optimizers.")
-    parser.add_argument("--D_betas", type=float, nargs=2, default=(0.9, 0.999),
-        help="used in Adam optimizer (see torch.optim.Adam for details).")
-
-    parser.add_argument("--G_optimizer", type=str.lower, default="sgd",
-        help="the name of the optimizer used for training (SGD, Adam, RMSProp)",
-        choices=("sgd", "adam", "rmsprop"),)
-    parser.add_argument("--G_lr", type=float, default=1.0e-4,
-        help="the learning rate, which controls the size of the optimization update.")
-    parser.add_argument("--G_momentum", type=positive(float), default=0.0,
-        help="used in SGD and RMSProp optimizers.")
-    parser.add_argument("--G_betas", type=float, nargs=2, default=(0.9, 0.999),
-        help="used in Adam optimizer (see torch.optim.Adam for details).")
-
-    parser.add_argument("--D_iters", type=positive(int), default=5,
-        help="number of iterations to train discriminator every batch.")
-    parser.add_argument("--clamp", type=float, nargs=2, default=(-0.01, 0.01),
-        help="used in WGAN for clamping the weights of the discriminator.")
-    parser.add_argument("--gp_coeff", type=float, default=10.0,
-        help="a coefficient to multiply with the gradient penalty in the loss of WGAN-GP.")
-
-    parser.add_argument("--stats_interval", type=positive(int), default=50,
-        help="the interval in which a report of the training stats will be shown to the console.")
-    parser.add_argument("--generate_grid_interval", type=positive(int), default=200,
-        help="the interval in which the progress of the generator will be checked and recorded.")
-
-    ### Trainer.run() ###
-    parser.add_argument("--num_epochs", type=positive(int), default=5,
-        help="number of training epochs (i.e. full runs on the dataset).")
-    parser.add_argument("--save_results", action="store_true",
-        help="save the results of the experiment.")
-
-    # Parse arguments
-    args = parser.parse_args()
-
-    # Run main function
+    args = parse_args()
     main(args)
 
