@@ -10,9 +10,15 @@ import numpy as np
 
 from dataset.dataset import MakeupDataset
 from dataset.transforms import MakeupSampleTransform
-from model.makeupnet import _MakeupNet, MakeupNet
-from trainers.makeupnet_trainer import _MakeupNetTrainer, MakeupNetTrainer
+from model.pairedcyclegan import PairedCycleGAN
+from trainers.pairedcyclegan_trainer import PairedCycleGAN_Trainer
 from trainers.utils.init_utils import create_weights_init
+
+### Only for testing ###
+TEST = False
+from model.dcgan import DCGAN
+from trainers.gan_trainer import GAN_Trainer
+
 
 # @TODO: add logging
 
@@ -165,8 +171,12 @@ def main(args):
 
     # Initialize dataset, model, and trainer
     dataset = MakeupDataset(**dataset_args, transform=transform)
-    model = MakeupNet(**model_args)
-    trainer = MakeupNetTrainer(model, dataset, **trainer_args, weights_init=weights_init)
+    model = PairedCycleGAN(**model_args)
+    trainer = PairedCycleGAN_Trainer(model, dataset, **trainer_args, weights_init=weights_init)
+
+    if TEST:
+        model = DCGAN(**model_args)
+        trainer = GAN_Trainer(model, dataset, **trainer_args, weights_init=weights_init)
 
     # Train model on dataset using trainer
     trainer.run(num_epochs=args.num_epochs, save_results=args.save_results)
@@ -176,20 +186,20 @@ if __name__ == "__main__":
 
     # Adding positive and non-negative types for arguments type check
     def positive(type):    
-        def positive_type(value):
+        def positive_number(value):
             typed_value = type(value)
             if not (typed_value > 0):
                 raise argparse.ArgumentTypeError(f"{value} is not a positive {type.__name__}.")
             return typed_value
-        return positive_type
+        return positive_number
 
     def nonnegative(type):    
-        def nonnegative_type(value):
+        def nonnegative_number(value):
             typed_value = type(value)
             if not (typed_value >= 0):
                 raise argparse.ArgumentTypeError(f"{value} is not a non-negative {type.__name__}.")
             return typed_value
-        return nonnegative_type
+        return nonnegative_number
 
 
     # Initialize parser and add arguments
@@ -273,7 +283,7 @@ if __name__ == "__main__":
         help="number of training epochs (i.e. full runs on the dataset).")
     parser.add_argument("--save_results", action="store_true",
         help="save the results of the experiment.")
-    
+
     # Parse arguments
     args = parser.parse_args()
 

@@ -11,7 +11,7 @@ def get_D_loss(D, real, fake, gan_type="gan", gp_coeff=10.):
     D_on_real = D(real)
     D_on_fake = D(fake)
 
-    if gan_type == "gan":
+    if gan_type in ("gan", "dcgan", "ns-gan"):
         loss = D_loss_GAN(D_on_real, D_on_fake)
 
     elif gan_type == "wgan":

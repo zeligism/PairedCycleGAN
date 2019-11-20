@@ -2,20 +2,14 @@
 import torch
 import torch.nn.functional as F
 
-from .gan_trainer import GAN_Trainer
 from .base_trainer import BaseTrainer
 from .utils.init_utils import init_optim
 from .utils.gan_utils import *
 from .utils.face_morph.face_morph import face_morph
 
 
-class _MakeupNetTrainer(GAN_Trainer):
-    def __init__(self, model, dataset, **kwargs):
-        super().__init__(model, dataset, **kwargs)
-
-
-class MakeupNetTrainer(BaseTrainer):
-    """The trainer for MakeupNet."""
+class PairedCycleGAN_Trainer(BaseTrainer):
+    """The trainer for PairedCycleGAN."""
 
     def __init__(self, model, dataset,
                  D_optim_config={},

@@ -134,7 +134,7 @@ makeup:
     num_features: 64
     image_channels: 3
     image_size: 64
-    gan_type: wgan-gp
+    gan_type: gan
 
   trainer:
     batch_size: 4

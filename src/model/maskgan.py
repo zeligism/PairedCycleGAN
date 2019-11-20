@@ -2,37 +2,11 @@
 import torch
 import torch.nn as nn
 
-from .gan import DCGAN, DCGAN_Discriminator
+from .dcgan import DCGAN_Discriminator
 from .residual import ResidualBlock
 
 
-class _MakeupNet(DCGAN):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-
-class MakeupNet(nn.Module):
-    def __init__(self, num_features, image_channels=3, image_size=64, gan_type="gan", **kwargs):
-        super().__init__()
-
-        self.num_features = num_features
-        self.image_channels = image_channels
-        self.image_size = image_size
-        self.gan_type = gan_type
-
-        makeupnet_params = {
-            "image_channels": image_channels,
-            "num_features": num_features,
-            "image_size": image_size,
-            "gan_type": gan_type,
-        }
-
-        self.remover = MakeupMaskGAN(**makeupnet_params)
-        self.applier = MakeupMaskGAN(**makeupnet_params, with_reference=True)
-        self.style_D = StyleDiscriminator(**makeupnet_params)
-
-
-class MakeupMaskGAN(nn.Module):
+class MaskGAN(nn.Module):
     def __init__(self, num_features,
                  image_channels=3,
                  image_size=64,
@@ -52,29 +26,29 @@ class MakeupMaskGAN(nn.Module):
         }
 
         self.D = DCGAN_Discriminator(**D_params)
-        self.G = MakeupMaskGenerator(**G_params)
+        self.G = MaskGenerator(**G_params)
 
 
-class MakeupMaskGenerator(nn.Module):
-    """A neural network that generates a mask that applies or removes makeup."""
+class MaskGenerator(nn.Module):
+    """A neural network that generates a mask to apply."""
     def __init__(self, num_features=64, with_reference=False):
         super().__init__()
 
         self.num_features = num_features
         self.with_reference = with_reference
 
-        def make_features_extractor():
+        def make_features_extractor(num_features):
             return nn.Sequential(
-                nn.Conv2d(3, self.num_features, 7, padding=3, bias=False),
+                nn.Conv2d(3, num_features, 7, padding=3, bias=False),
                 nn.ReLU(),
             )
 
         # Extract features from source
-        self.source_features_extractor = make_features_extractor()
+        self.source_features_extractor = make_features_extractor(self.num_features)
 
         # Extract features from reference
         if self.with_reference:
-            self.reference_features_extractor = make_features_extractor()
+            self.reference_features_extractor = make_features_extractor(self.num_features)
 
 
         # Double the number of features in the mask generator if with reference
@@ -105,12 +79,4 @@ class MakeupMaskGenerator(nn.Module):
         mask = self.mask_generator(features)
 
         return source + mask
-
-
-class StyleDiscriminator(DCGAN_Discriminator):
-    def __init__(self, *args, **kwargs):
-
-        kwargs["image_channels"] *= 2  # @XXX: extract features from img first?
-        super().__init__(*args, **kwargs)
-
 
