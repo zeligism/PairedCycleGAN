@@ -10,13 +10,9 @@ class CycleGAN(nn.Module):
                  image_channels=3,
                  image_size=64,
                  gan_type="gan",
-                 gan_class=DCGAN,
                  **kwargs):
         super().__init__()
 
-        self.num_features = num_features
-        self.image_channels = image_channels
-        self.image_size = image_size
         self.gan_type = gan_type
 
         model_config = {
@@ -26,12 +22,30 @@ class CycleGAN(nn.Module):
             "gan_type": gan_type,
         }
 
-        self.applier = gan_class(**model_config)
-        self.remover = gan_class(**model_config)
+        self.applier = DCGAN(**model_config)
+        self.remover = DCGAN(**model_config)
 
 
-class MaskCycleGAN(CycleGAN):
-    def __init__(self, *args, **kwargs):
-        kwargs["gan_class"] = MaskGAN
-        super().__init__(*args, **kwargs)
+class MaskCycleGAN(nn.Module):
+    def __init__(self, num_features,
+                 image_channels=3,
+                 image_size=64,
+                 gan_type="gan",
+                 with_reference=False,
+                 **kwargs):
+        super().__init__()
+
+        self.gan_type = gan_type
+
+        model_config = {
+            "image_channels": image_channels,
+            "num_features": num_features,
+            "image_size": image_size,
+            "gan_type": gan_type,
+            "with_reference": with_reference,
+        }
+
+        self.applier = MaskGAN(**model_config)
+        self.remover = MaskGAN(**model_config)
+
 

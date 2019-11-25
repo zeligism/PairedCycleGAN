@@ -2,7 +2,7 @@
 import os
 import torch
 
-from random import shuffle
+import random
 from PIL import Image
 from face_recognition import face_landmarks
 from torch.utils.data import Dataset
@@ -71,7 +71,7 @@ class MakeupDataset(Dataset):
 
         # Shuffle the other list/dataset every time we reiterate from the beginning
         if not self.paired and index == 0:
-            shuffle(self.images_after)
+            random.shuffle(self.images_after)
 
         # Sample before and after images
         image_before = self.images_before[index]

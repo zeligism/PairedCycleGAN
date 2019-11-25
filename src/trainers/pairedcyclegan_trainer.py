@@ -5,6 +5,7 @@ import torch.nn.functional as F
 from .base_trainer import BaseTrainer
 from .utils.init_utils import init_optim
 from .utils.gan_utils import *
+from .utils.report_utils import *
 from .utils.face_morph.face_morph import face_morph
 
 
@@ -118,10 +119,10 @@ class PairedCycleGAN_Trainer(BaseTrainer):
         self.optims_zero_grad("D")
 
         # Adversarial losses for makeup domain, no-makeup domain, and styles domain
-        gan_configs = {"gan_type": self.model.gan_type, "gp_coeff": self.gp_coeff}
-        D_loss = 0.1 * get_D_loss(self.model.applier.D, real_after, fake_after, **gan_configs)     \
-               + 0.1 * get_D_loss(self.model.remover.D, real_before, fake_before, **gan_configs) \
-               + 0.1 * get_D_loss(self.model.style_D, real_styles, fake_styles, **gan_configs)
+        gan_config = {"gan_type": self.model.gan_type, "gp_coeff": self.gp_coeff}
+        D_loss = 0.1 * get_D_loss(self.model.applier.D, real_after, fake_after, **gan_config)     \
+               + 0.1 * get_D_loss(self.model.remover.D, real_before, fake_before, **gan_config) \
+               + 0.1 * get_D_loss(self.model.style_D, real_styles, fake_styles, **gan_config)
 
         # Calculate gradients
         D_loss.backward()
@@ -144,10 +145,10 @@ class PairedCycleGAN_Trainer(BaseTrainer):
         self.optims_zero_grad("G")
 
         # Adversarial loss for makeup domain, no-makeup domain, and style domain
-        gan_configs = {"gan_type": self.model.gan_type}
-        G_loss = 0.1 * get_G_loss(self.model.applier.D, fake_after, **gan_configs)   \
-               + 0.1 * get_G_loss(self.model.remover.D, fake_before, **gan_configs) \
-               + 0.1 * get_G_loss(self.model.style_D, fake_styles, **gan_configs)
+        gan_config = {"gan_type": self.model.gan_type}
+        G_loss = 0.1 * get_G_loss(self.model.applier.D, fake_after, **gan_config)   \
+               + 0.1 * get_G_loss(self.model.remover.D, fake_before, **gan_config) \
+               + 0.1 * get_G_loss(self.model.style_D, fake_styles, **gan_config)
 
         # Identity loss
         G_loss += F.l1_loss(real_before, self.model.remover.G(fake_after))

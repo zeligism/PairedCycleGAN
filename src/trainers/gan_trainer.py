@@ -227,9 +227,6 @@ class GAN_Trainer(BaseTrainer):
             plot_lines(evals, title="Evals")
             return
 
-        # Create results directory if it hasn't been created yet
-        if not os.path.isdir(self.results_dir): os.mkdir(self.results_dir)
-
         # Create experiment directory in the model's directory
         experiment_dir = os.path.join(self.results_dir, self.get_experiment_name())
         if not os.path.isdir(experiment_dir): os.mkdir(experiment_dir)
@@ -240,11 +237,11 @@ class GAN_Trainer(BaseTrainer):
 
         # Plot losses of D and G
         losses_file = os.path.join(experiment_dir, "losses.png")
-        plot_lines(losses, losses_file, title="Losses of D and G")
+        plot_lines(losses, filename=losses_file, title="Losses of D and G")
 
         # Plot evals of D on real and fake data
         evals_file = os.path.join(experiment_dir, "evals.png")
-        plot_lines(evals, evals_file, title="Evaluations of D on real and fake data")
+        plot_lines(evals, filename=evals_file, title="Evaluations of D on real and fake data")
 
         # Create an animation of the generator's progress
         animation_file = os.path.join(experiment_dir, "progress.mp4")
@@ -261,10 +258,9 @@ class GAN_Trainer(BaseTrainer):
         The post-training step.
         """
 
-        should_report_stats = self.batch % self.stats_interval == 0
+        should_report_stats = self.iters % self.stats_interval == 0
         should_generate_grid = self.iters % self.generate_grid_interval == 0
         finished_epoch = self.batch == self.num_batches
-        #finished_training = finished_epoch and self.epoch == self.num_epochs
 
         # Report training stats
         if should_report_stats or finished_epoch:

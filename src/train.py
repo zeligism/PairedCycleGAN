@@ -302,14 +302,14 @@ def main(args):
     makeupgan = PairedCycleGAN(**model_args)
 
     # Pre-train makeup applier
-    subtrainer = CycleGAN_Trainer(pretrained_applier, unpaired_dataset,
-                                  **trainer_args, weights_init=weights_init)
+    subtrainer = CycleGAN_Trainer(pretrained_applier, unpaired_dataset, **trainer_args,
+                                  name="makeupgan.applier", weights_init=weights_init)
     subtrainer.run(num_epochs=args.num_epochs, save_results=args.save_results)
 
-    # Train MakeupGAN
+    # Train MakeupGAN  @TODO: how to deal with "with_reference"?
     makeupgan.applier = pretrained_applier
-    trainer = PairedCycleGAN_Trainer(makeupgan, paired_dataset,
-                                     **trainer_args, weights_init=weights_init)
+    trainer = PairedCycleGAN_Trainer(makeupgan, paired_dataset, **trainer_args,
+                                     name="makeupgan", weights_init=weights_init)
     trainer.run(num_epochs=args.num_epochs, save_results=args.save_results)
 
 

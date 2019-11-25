@@ -1,4 +1,35 @@
 ####################################
+makeup:
+  dataset:
+    dataset_dir: "dataset/data/processing/faces"
+
+  model:
+    num_features: 64
+    image_channels: 3
+    image_size: 64
+    gan_type: gan
+
+  trainer:
+    batch_size: 4
+
+    D_optim_config:
+      optim_choice: adam
+      lr: 1.0e-4
+      #betas: [0.5, 0.9]
+
+    G_optim_config:
+      optim_choice: adam
+      lr: 1.0e-4
+      #betas: [0.5, 0.9]
+
+    D_iters: 3
+    gp_coeff: 10.
+
+    stats_interval: 2
+    generate_grid_interval: 2
+
+
+####################################
 dcgan:
   dataset:
     dataset_dir: "dataset/data/processing/faces"
@@ -120,34 +151,5 @@ wgan-gp:
     stats_interval: 50
     generate_grid_interval: 200
 
-
-####################################
-makeup:
-  dataset:
-    dataset_dir: "dataset/data/processing/faces"
-
-  model:
-    num_features: 64
-    image_channels: 3
-    image_size: 64
-    gan_type: gan
-
-  trainer:
-    batch_size: 4
-
-    D_optim_config:
-      optim_choice: adam
-      lr: 1.0e-4
-      #betas: [0.5, 0.9]
-
-    G_optim_config:
-      optim_choice: adam
-      lr: 1.0e-4
-      #betas: [0.5, 0.9]
-
-    D_iters: 3
-    gp_coeff: 10.
-
-    stats_interval: 5
 
 

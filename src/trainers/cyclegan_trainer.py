@@ -1,10 +1,13 @@
 
+import os
+import random
 import torch
 import torch.nn.functional as F
 
 from .base_trainer import BaseTrainer
 from .utils.init_utils import init_optim
 from .utils.gan_utils import *
+from .utils.report_utils import *
 
 
 class CycleGAN_Trainer(BaseTrainer):
@@ -17,6 +20,7 @@ class CycleGAN_Trainer(BaseTrainer):
                  clamp=(-0.01, 0.01),
                  gp_coeff=10.,
                  stats_interval=50,
+                 generate_grid_interval=200,
                  **kwargs):
         """
         Constructor.
@@ -31,6 +35,7 @@ class CycleGAN_Trainer(BaseTrainer):
         self.clamp = clamp
         self.gp_coeff = gp_coeff
         self.stats_interval = stats_interval
+        self.generate_grid_interval = generate_grid_interval
 
         # Initialize optimizers for generator and discriminator
         self.optims = {
@@ -43,6 +48,17 @@ class CycleGAN_Trainer(BaseTrainer):
                 "G": init_optim(self.model.remover.G.parameters(), **G_optim_config),
             },
         }
+
+        # Generate makeup for a sample no-makeup faces and reference makeup faces
+        self._generated_grids = []
+        
+        random_indices = random.sample(range(len(self.dataset)), 4)
+        self._plain_faces = [self.dataset[i]["before"] for i in random_indices]
+        self._plain_faces = torch.stack(self._plain_faces, dim=0).to(self.device)
+
+        random_indices = random.sample(range(len(self.dataset)), 4)
+        self._reference_faces = [self.dataset[i]["after"] for i in random_indices]
+        self._reference_faces = torch.stack(self._reference_faces, dim=0).to(self.device)
 
 
     def optims_zero_grad(self, D_or_G):
@@ -108,9 +124,9 @@ class CycleGAN_Trainer(BaseTrainer):
         self.optims_zero_grad("D")
 
         # Adversarial losses for after domain, before domain
-        gan_configs = {"gan_type": self.model.gan_type, "gp_coeff": self.gp_coeff}
-        D_loss = 0.1 * get_D_loss(self.model.applier.D, real_after, fake_after, **gan_configs)     \
-               + 0.1 * get_D_loss(self.model.remover.D, real_before, fake_before, **gan_configs)
+        gan_config = {"gan_type": self.model.gan_type, "gp_coeff": self.gp_coeff}
+        D_loss = 0.1 * get_D_loss(self.model.applier.D, real_after, fake_after, **gan_config)     \
+               + 0.1 * get_D_loss(self.model.remover.D, real_before, fake_before, **gan_config)
 
         # Calculate gradients
         D_loss.backward()
@@ -131,9 +147,9 @@ class CycleGAN_Trainer(BaseTrainer):
         self.optims_zero_grad("G")
 
         # Adversarial loss for after domain, before domain
-        gan_configs = {"gan_type": self.model.gan_type}
-        G_loss = 0.1 * get_G_loss(self.model.applier.D, fake_after, **gan_configs)   \
-               + 0.1 * get_G_loss(self.model.remover.D, fake_before, **gan_configs)
+        gan_config = {"gan_type": self.model.gan_type}
+        G_loss = 0.1 * get_G_loss(self.model.applier.D, fake_after, **gan_config)   \
+               + 0.1 * get_G_loss(self.model.remover.D, fake_before, **gan_config)
 
         # Identity loss
         G_loss += F.l1_loss(real_before, self.model.remover.G(fake_after))
@@ -148,6 +164,63 @@ class CycleGAN_Trainer(BaseTrainer):
         self.optims_step("G")
 
         return G_loss
+
+
+    #################### Reporting and Tracking Methods ####################
+
+    def post_train_step(self):
+        """
+        The post-training step.
+        """
+
+        should_report_stats = self.iters % self.stats_interval == 0
+        should_generate_grid = self.iters % self.generate_grid_interval == 0
+        finished_epoch = self.batch == self.num_batches
+
+        # Report training stats
+        if should_report_stats or finished_epoch:
+            self.report_training_stats()
+
+        # Check generator's progress by recording its output on a fixed input
+        if should_generate_grid:
+            grid = generate_applier_grid(self.model.applier.G, self._plain_faces)
+            self._generated_grids.append(grid)
+
+
+    def stop(self, save_results=False):
+        """
+        Stops the trainer and report the result of the experiment.
+
+        Args:
+            save_results: Results will be saved if this was set to True.
+        """
+
+        losses = self.get_data_containing("loss")
+
+        if not save_results:
+            plot_lines(losses, title="Losses")
+            return
+
+        # Create experiment directory in the model's directory
+        experiment_dir = os.path.join(self.results_dir, self.get_experiment_name())
+        if not os.path.isdir(experiment_dir): os.mkdir(experiment_dir)
+
+        # Save model
+        model_path = os.path.join(experiment_dir, "model.pt")
+        self.save_model(model_path)
+
+        # Plot losses of D and G
+        losses_file = os.path.join(experiment_dir, "losses.png")
+        plot_lines(losses, filename=losses_file, title="Losses of D and G")
+
+        # Create an animation of the generator's progress
+        animation_file = os.path.join(experiment_dir, "progress.mp4")
+        create_progress_animation(self._generated_grids, animation_file)
+
+        # Write details of experiment
+        details_txt = os.path.join(experiment_dir, "repr.txt")
+        with open(details_txt, "w") as f:
+            f.write(self.__repr__())
 
 
 

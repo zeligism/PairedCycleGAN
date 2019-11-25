@@ -103,6 +103,10 @@ class BaseTrainer:
             save_results: A flag indicating whether we should save the results this run.
         """
 
+        if save_results:
+            # Create results directory if it hasn't been created yet
+            if not os.path.isdir(self.results_dir): os.mkdir(self.results_dir)
+
         try:
             # Try training the model
             self.train(num_epochs)
