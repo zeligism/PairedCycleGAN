@@ -14,7 +14,11 @@ dict_to_list = lambda d: [x for l in d.values() for x in l]
 class MakeupDataset(Dataset):
     """A dataset of before-and-after makeup images."""
 
-    def __init__(self, dataset_dir, transform=None, with_landmarks=False, paired=False):
+    def __init__(self, dataset_dir,
+                 transform=None,
+                 with_landmarks=False,
+                 paired=False,
+                 reverse=False):
         """
         Initializes MakeupDataset.
 
@@ -23,6 +27,7 @@ class MakeupDataset(Dataset):
             transform: The transform used on the data.
             with_landmarks: A flag indicating whether landmarks should be used or not.
             paired: Indicates whether images should be paired when sampled or not.
+            reverse: Reverses sample if True (before = with makeup, after = no makeup).
         """
 
         if not os.path.isdir(dataset_dir):
@@ -32,6 +37,7 @@ class MakeupDataset(Dataset):
         self.with_landmarks = with_landmarks
         self.transform = transform
         self.paired = paired
+        self.reverse = reverse
 
         self.images_before, self.images_after = self.get_images()
         self.landmarks_cache = {}
@@ -98,6 +104,10 @@ class MakeupDataset(Dataset):
                 "after":  self.get_landmarks(image_after,  sample["after"]),
             }
 
+        # Reverse direction of sample
+        if self.reverse:
+            sample = self.reverse_sample(sample)
+
         return sample
 
 
@@ -150,6 +160,29 @@ class MakeupDataset(Dataset):
             landmarks = torch.zeros(self.landmarks_size, dtype=torch.int)
 
         return landmarks
+
+
+    def reverse_sample(self, sample):
+        """
+        Reverse direction of sample.
+
+        Args:
+            sample: A sample from the dataset
+        """
+
+        sample = {
+            "before": sample["after"],
+            "after": sample["before"],
+        }
+
+        if "landmarks" in sample:
+            sample["landmarks"] = {
+                "before": sample["landmarks"]["after"],
+                "after": sample["landmarks"]["before"],
+            }
+
+
+        return sample
 
 
     def __repr__(self):
