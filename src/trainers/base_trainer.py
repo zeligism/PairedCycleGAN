@@ -89,7 +89,7 @@ class BaseTrainer:
 
 
     def save_model(self, model_path):
-        print("Saving model")
+        print("Saving model...")
         torch.save(self.model.state_dict(), model_path)
 
 
@@ -129,7 +129,7 @@ class BaseTrainer:
         self.init_dataset_sampler()
 
         try:
-            print("Starting Training Loop...")
+            print(f"Starting training {self.name}...")
             while True:
                 # One training step/iteration
                 self.pre_train_step()

@@ -51,14 +51,9 @@ class CycleGAN_Trainer(BaseTrainer):
 
         # Generate makeup for a sample no-makeup faces and reference makeup faces
         self._generated_grids = []
-        
         random_indices = random.sample(range(len(self.dataset)), 4)
-        self._plain_faces = [self.dataset[i]["before"] for i in random_indices]
-        self._plain_faces = torch.stack(self._plain_faces, dim=0).to(self.device)
-
-        random_indices = random.sample(range(len(self.dataset)), 4)
-        self._reference_faces = [self.dataset[i]["after"] for i in random_indices]
-        self._reference_faces = torch.stack(self._reference_faces, dim=0).to(self.device)
+        self._fixed_before = [self.dataset[i]["before"] for i in random_indices]
+        self._fixed_before = torch.stack(self._fixed_before, dim=0).to(self.device)
 
 
     def optims_zero_grad(self, D_or_G):
@@ -87,8 +82,6 @@ class CycleGAN_Trainer(BaseTrainer):
         """
         Makes ones training step.
         """
-
-        print("Step: %d" % self.iters)
 
         ### Train D ###
         for _ in range(self.D_iters):
@@ -183,7 +176,7 @@ class CycleGAN_Trainer(BaseTrainer):
 
         # Check generator's progress by recording its output on a fixed input
         if should_generate_grid:
-            grid = generate_applier_grid(self.model.applier.G, self._plain_faces)
+            grid = generate_applier_grid(self.model.applier.G, self._fixed_before)
             self._generated_grids.append(grid)
 
 

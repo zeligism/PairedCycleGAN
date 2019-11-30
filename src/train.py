@@ -50,11 +50,11 @@ def parse_args():
     # Initialize parser and add arguments
     parser = argparse.ArgumentParser(description="Train a model on a dataset using a trainer.")
 
-    parser.add_argument("--config", type=str,
+    parser.add_argument("-c", "--config", type=str,
         help="The key of the configurations of dataset, model, and trainer as defined in 'config.yaml'. "
              "This will override all given args for dataset, model, and trainer.")
 
-    parser.add_argument("--random_seed", type=int, default=123,
+    parser.add_argument("-r", "--random_seed", type=int, default=123,
         help="random seed.")
 
     ### Dataset Args ###
@@ -75,8 +75,6 @@ def parse_args():
         help="type of gan among GAN (default), WGAN (Wasserstein GAN), and WGAN-GP (WGAN with gradient penalty).")
 
     ### Trainer Args ###
-    parser.add_argument("--trainer_name", type=str, default="trainer",
-        help="name of the model trainer (which is also the name of your experiment).")
     parser.add_argument("--results_dir", type=str, default="results/",
         help="directory where the results for each run will be saved.")
     parser.add_argument("--load_model", type=str,
@@ -122,9 +120,9 @@ def parse_args():
         help="the interval in which the progress of the generator will be checked and recorded.")
 
     ### Trainer.run() ###
-    parser.add_argument("--num_epochs", type=positive(int), default=5,
+    parser.add_argument("-e", "--num_epochs", type=positive(int), default=5,
         help="number of training epochs (i.e. full runs on the dataset).")
-    parser.add_argument("--save_results", action="store_true",
+    parser.add_argument("-s", "--save_results", action="store_true",
         help="save the results of the experiment.")
 
     # Parse arguments
@@ -195,7 +193,6 @@ def get_trainer_args(args):
         args: Parsed arguments from command line.
     """
     trainer_args = {
-        "name": args.trainer_name,
         "results_dir": args.results_dir,
         "load_model_path": args.load_model,
         "num_gpu": args.num_gpu,
@@ -263,12 +260,14 @@ def make_transform(image_size):
     """
     Make data transform and return it.
     """
-    transform_sequence = list(map(MakeupSampleTransform, [
+    transform_sequence = [
         transforms.Resize((image_size, image_size)),
         transforms.ColorJitter(brightness=0.1),
+        transforms.RandomHorizontalFlip(),
         transforms.ToTensor(),
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-    ]))
+    ]
+    transform_sequence = list(map(MakeupSampleTransform, transform_sequence))
     transform = transforms.Compose(transform_sequence)
 
     return transform
@@ -291,24 +290,19 @@ def main(args):
     transform = make_transform(model_args["image_size"])
     weights_init = create_weights_init()
 
-
-    # Initialize datasets
-    unpaired_dataset = MakeupDataset(**dataset_args, transform=transform)
-    paired_dataset = MakeupDataset(**dataset_args, transform=transform,
-                                   with_landmarks=True, paired=True)
-
-    # Initialize models
-    pretrained_applier = MaskCycleGAN(**model_args)
-    makeupgan = PairedCycleGAN(**model_args)
-
-    # Pre-train makeup applier
-    subtrainer = CycleGAN_Trainer(pretrained_applier, unpaired_dataset, **trainer_args,
-                                  name="makeupgan.applier", weights_init=weights_init)
+    # Train makeup remover using CycleGAN
+    unpaired_dataset = MakeupDataset(**dataset_args, transform=transform, reverse=True)
+    facecleaner_cyclegan = MaskCycleGAN(**model_args)
+    subtrainer = CycleGAN_Trainer(facecleaner_cyclegan, unpaired_dataset, **trainer_args,
+                                  name="makeupgan.remover", weights_init=weights_init)
     subtrainer.run(num_epochs=args.num_epochs, save_results=args.save_results)
 
-    # Train MakeupGAN  @TODO: how to deal with "with_reference"?
-    makeupgan.applier = pretrained_applier
-    trainer = PairedCycleGAN_Trainer(makeupgan, paired_dataset, **trainer_args,
+    # Train PairedCycleGAN, and assign to it the pre-trained makeup remover
+    paired_dataset = MakeupDataset(**dataset_args, transform=transform,
+                                   with_landmarks=True, paired=True)
+    makeup_pcgan = PairedCycleGAN(**model_args)
+    makeup_pcgan.remover = facecleaner_cyclegan.applier  # as in "applying the makeup cleaning"
+    trainer = PairedCycleGAN_Trainer(makeup_pcgan, paired_dataset, **trainer_args,
                                      name="makeupgan", weights_init=weights_init)
     trainer.run(num_epochs=args.num_epochs, save_results=args.save_results)
 

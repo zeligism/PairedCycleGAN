@@ -78,8 +78,6 @@ class PairedCycleGAN_Trainer(BaseTrainer):
         Makes ones training step.
         """
 
-        print("Step: %d" % self.iters)
-
         ### Train D ###
         for _ in range(self.D_iters):
             # Sample from dataset
