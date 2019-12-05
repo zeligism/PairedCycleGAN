@@ -1,4 +1,6 @@
 
+import os
+import random
 import torch
 import torch.nn.functional as F
 
@@ -19,6 +21,7 @@ class PairedCycleGAN_Trainer(BaseTrainer):
                  clamp=(-0.01, 0.01),
                  gp_coeff=10.,
                  stats_interval=50,
+                 generate_grid_interval=200,
                  **kwargs):
         """
         Constructor.
@@ -33,6 +36,7 @@ class PairedCycleGAN_Trainer(BaseTrainer):
         self.clamp = clamp
         self.gp_coeff = gp_coeff
         self.stats_interval = stats_interval
+        self.generate_grid_interval = generate_grid_interval
 
         # Initialize optimizers for generator and discriminator
         self.optims = {
@@ -49,6 +53,15 @@ class PairedCycleGAN_Trainer(BaseTrainer):
                 # "G": init_optim([]),
             }
         }
+
+        # Generate makeup for a sample no-makeup faces and reference makeup faces
+        num_test = 4
+        self._generated_grids = []
+        random_indices = random.sample(range(len(self.dataset)), num_test)
+        self._fixed_before = torch.stack(
+            [self.dataset[i]["before"] for i in random_indices], dim=0).to(self.device)
+        self._fixed_after = torch.stack(
+            [self.dataset[i]["after"] for i in random_indices], dim=0).to(self.device)
 
 
     def optims_zero_grad(self, D_or_G):
@@ -206,6 +219,63 @@ class PairedCycleGAN_Trainer(BaseTrainer):
                 morphed_batch.append(numpy_to_torch(morphed))
 
         return mask, torch.stack(morphed_batch).to(real_after)
+
+
+    #################### Reporting and Tracking Methods ####################
+
+    def post_train_step(self):
+        """
+        The post-training step.
+        """
+
+        should_report_stats = self.iters % self.stats_interval == 0
+        should_generate_grid = self.iters % self.generate_grid_interval == 0
+        finished_epoch = self.batch == self.num_batches
+
+        # Report training stats
+        if should_report_stats or finished_epoch:
+            self.report_training_stats()
+
+        # Check generator's progress by recording its output on a fixed input
+        if should_generate_grid:
+            grid = generate_applier_grid(self.model.remover.G, self._fixed_after)
+            self._generated_grids.append(grid)
+
+
+    def stop(self, save_results=False):
+        """
+        Stops the trainer and report the result of the experiment.
+
+        Args:
+            save_results: Results will be saved if this was set to True.
+        """
+
+        losses = self.get_data_containing("loss")
+
+        if not save_results:
+            plot_lines(losses, title="Losses")
+            return
+
+        # Create experiment directory in the model's directory
+        experiment_dir = os.path.join(self.results_dir, self.get_experiment_name())
+        if not os.path.isdir(experiment_dir): os.mkdir(experiment_dir)
+
+        # Save model
+        model_path = os.path.join(experiment_dir, "model.pt")
+        self.save_model(model_path)
+
+        # Plot losses of D and G
+        losses_file = os.path.join(experiment_dir, "losses.png")
+        plot_lines(losses, filename=losses_file, title="Losses of D and G")
+
+        # Create an animation of the generator's progress
+        animation_file = os.path.join(experiment_dir, "progress.mp4")
+        create_progress_animation(self._generated_grids, animation_file)
+
+        # Write details of experiment
+        details_txt = os.path.join(experiment_dir, "repr.txt")
+        with open(details_txt, "w") as f:
+            f.write(self.__repr__())
 
 
 
