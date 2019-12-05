@@ -1,7 +1,6 @@
 
+import torch
 import torch.nn as nn
-
-from torch.optim import SGD, RMSprop, Adam
 
 
 def create_weights_init(conv_std=0.02, batchnorm_std=0.02):
@@ -39,13 +38,13 @@ def init_optim(params, optim_choice="sgd", lr=1e-4, momentum=0.0, betas=(0.9, 0.
     """
 
     if optim_choice == "adam":
-        optim = Adam(params, lr=lr, betas=betas)
+        optim = torch.optim.Adam(params, lr=lr, betas=betas)
     elif optim_choice == "rmsprop":
-        optim = RMSprop(params, lr=lr)
+        optim = torch.optim.RMSprop(params, lr=lr)
     elif optim_choice == "sgd":
-        optim = SGD(params, lr=lr, momentum=momentum)
+        optim = torch.optim.SGD(params, lr=lr, momentum=momentum)
     else:
-        raise ValueError(f"Optimizer '{optim_choice}' not recognized")
+        raise ValueError(f"Optimizer '{optim_choice}' not recognized.")
 
     return optim
 

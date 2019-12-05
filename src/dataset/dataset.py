@@ -1,17 +1,17 @@
 
 import os
 import torch
+import torch.utils.data as data_utils
 
 import random
 from PIL import Image
 from face_recognition import face_landmarks
-from torch.utils.data import Dataset
 from .data.utility import files_iter
 
 dict_to_list = lambda d: [x for l in d.values() for x in l]
 
 
-class MakeupDataset(Dataset):
+class MakeupDataset(data_utils.Dataset):
     """A dataset of before-and-after makeup images."""
 
     def __init__(self, dataset_dir,

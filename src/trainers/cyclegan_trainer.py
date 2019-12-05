@@ -50,10 +50,11 @@ class CycleGAN_Trainer(BaseTrainer):
         }
 
         # Generate makeup for a sample no-makeup faces and reference makeup faces
+        num_test = 4
         self._generated_grids = []
-        random_indices = random.sample(range(len(self.dataset)), 4)
-        self._fixed_before = [self.dataset[i]["before"] for i in random_indices]
-        self._fixed_before = torch.stack(self._fixed_before, dim=0).to(self.device)
+        random_indices = random.sample(range(len(self.dataset)), num_test)
+        self._fixed_before = torch.stack(
+            [self.dataset[i]["before"] for i in random_indices], dim=0).to(self.device)
 
 
     def optims_zero_grad(self, D_or_G):
@@ -108,13 +109,13 @@ class CycleGAN_Trainer(BaseTrainer):
 
     def D_step(self, real_after, real_before):
 
+        # Zero gradients and loss
+        self.optims_zero_grad("D")
+
         # Sample from generators
         with torch.no_grad():
             fake_after = self.model.applier.G(real_before)
             fake_before = self.model.remover.G(real_after)
-
-        # Zero gradients and loss
-        self.optims_zero_grad("D")
 
         # Adversarial losses for after domain, before domain
         gan_config = {"gan_type": self.model.gan_type, "gp_coeff": self.gp_coeff}
@@ -132,12 +133,12 @@ class CycleGAN_Trainer(BaseTrainer):
 
     def G_step(self, real_after, real_before):
 
+        # Zero gradients
+        self.optims_zero_grad("G")
+
         # Sample from generators
         fake_after = self.model.applier.G(real_before)
         fake_before = self.model.remover.G(real_after)
-
-        # Zero gradients
-        self.optims_zero_grad("G")
 
         # Adversarial loss for after domain, before domain
         gan_config = {"gan_type": self.model.gan_type}

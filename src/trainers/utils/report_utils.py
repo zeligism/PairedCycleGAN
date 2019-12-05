@@ -24,6 +24,7 @@ def plot_lines(losses_dict, filename=None, title=""):
         plt.savefig(filename)
     
     plt.show()
+    plt.close()
 
 
 def create_progress_animation(frames, filename):
@@ -41,6 +42,8 @@ def create_progress_animation(frames, filename):
     ani = animation.ArtistAnimation(fig, ims, blit=True)
     
     ani.save(filename)
+
+    plt.close()
 
 
 def generate_grid(generator, latent):
@@ -65,7 +68,7 @@ def generate_grid(generator, latent):
     return image_grid
 
 
-def generate_applier_grid(applier, before):
+def generate_applier_grid(applier, before, num_cols=2):
     """
     Generate a grid of pairs of images, where each pair shows a before-after
     transition when applying the `applier` (which is a makeup remover in our
@@ -81,7 +84,6 @@ def generate_applier_grid(applier, before):
     with torch.no_grad():
         after = applier(before)
 
-    num_cols = 2  # before and after
     row = torch.zeros([num_cols * batch_size, *img_dim])
     row[0::num_cols] = before.detach()
     row[1::num_cols] = after.detach()

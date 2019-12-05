@@ -296,16 +296,6 @@ class BaseTrainer:
         self._data[label] = []
 
 
-    def forward_fill_data(self):  # @XXX
-        """
-        Fills all the data lists by their last values until the data lists
-        have a length of `self.iters`.
-        """
-        for label in self._data:
-            remaning = self.iters - len(self._data[label])
-            self._data[label] += remaning * [self.get_current_value(label)]
-
-
     def __repr__(self):
 
         self_dict = dict({k:v for k,v in self.__dict__.items() if k[0] != "_"})
