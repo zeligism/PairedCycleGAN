@@ -72,7 +72,7 @@ class PairedCycleGAN_Trainer(BaseTrainer):
             D_or_G: Indicates whether the operation is for D optims or G optims.
                     Should be either "D" or "G".
         """
-        [optim[D_or_G].zero_grad() for optim in self.optims if D_or_G in optim]
+        [optim[D_or_G].zero_grad() for optim in self.optims.values() if D_or_G in optim]
 
 
     def optims_step(self, D_or_G):
@@ -83,7 +83,7 @@ class PairedCycleGAN_Trainer(BaseTrainer):
             D_or_G: Indicates whether the operation is for D optims or G optims.
                     Should be either "D" or "G".
         """
-        [optim[D_or_G].step() for optim in self.optims if D_or_G in optim]
+        [optim[D_or_G].step() for optim in self.optims.values() if D_or_G in optim]
 
 
     def train_step(self):
