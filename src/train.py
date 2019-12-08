@@ -262,7 +262,7 @@ def make_transform(image_size):
     """
     transform_sequence = [
         transforms.Resize((image_size, image_size)),
-        transforms.ColorJitter(brightness=0.1),
+        transforms.ColorJitter(brightness=0.01),
         transforms.RandomHorizontalFlip(),
         transforms.ToTensor(),
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),

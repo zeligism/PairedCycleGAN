@@ -199,8 +199,8 @@ class PairedCycleGAN_Trainer(BaseTrainer):
     def morph_makeup(self, real_after, real_before, lm_after, lm_before):
 
         tensor2D_to_points = lambda t: [(p[0].item(), p[1].item()) for p in t]
-        torch_to_numpy = lambda t: t.permute(1, 2, 0).numpy()
-        numpy_to_torch = lambda t: torch.from_numpy(t).permute(2, 0, 1)
+        torch_to_numpy = lambda t: t.permute(1, 2, 0).cpu().numpy()
+        numpy_to_torch = lambda t: torch.from_numpy(t).to(self.device).permute(2, 0, 1)
 
         batch_size = real_after.size()[0]
         mask = torch.ones([batch_size, 1, 1, 1]).to(real_after)
