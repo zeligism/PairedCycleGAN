@@ -47,10 +47,10 @@ def get_G_loss(D, fake, gan_type="gan"):
 
 def D_loss_GAN(D_on_real, D_on_fake):
     
-    # Create (noisy) real and fake labels
-    real_label = 0.8 + 0.2 * torch.rand_like(D_on_real)
-    fake_label = 0.05 * torch.rand_like(D_on_fake)
-    
+    # Create (noisy) real and fake labels @XXX
+    real_label = 0.95 + 0.05 * torch.rand_like(D_on_real)
+    fake_label = 0.05 + 0.05 * torch.rand_like(D_on_fake)
+
     # Calculate binary cross entropy loss
     D_loss_on_real = F.binary_cross_entropy(D_on_real, real_label)
     D_loss_on_fake = F.binary_cross_entropy(D_on_fake, fake_label)
