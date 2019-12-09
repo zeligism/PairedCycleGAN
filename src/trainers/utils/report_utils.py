@@ -68,7 +68,7 @@ def generate_grid(generator, latent):
     return image_grid
 
 
-def generate_applier_grid(applier, before, num_cols=2):
+def generate_applier_grid(applier, before):
     """
     Generate a grid of pairs of images, where each pair shows a before-after
     transition when applying the `applier` (which is a makeup remover in our
@@ -82,13 +82,40 @@ def generate_applier_grid(applier, before, num_cols=2):
     img_dim = before.size()[1:]
 
     with torch.no_grad():
-        after = applier(before)
+        fake_after = applier(before)
 
-    row = torch.zeros([num_cols * batch_size, *img_dim])
-    row[0::num_cols] = before.detach()
-    row[1::num_cols] = after.detach()
+    row = torch.zeros([2 * batch_size, *img_dim])
+    row[0::2] = before.detach()
+    row[1::2] = fake_after.detach()
 
-    image_grid = vutils.make_grid(row.cpu(), nrow=num_cols, padding=2, normalize=True)
+    image_grid = vutils.make_grid(row.cpu(), nrow=8, padding=2, normalize=True)
+
+    return image_grid
+
+
+def generate_makeup_grid(applier_ref, remover, before, after_ref):
+    """
+    @TODO: doc
+    """
+
+    if len(before.size()) == 3:
+        before.unsqueeze(0)
+
+    batch_size = before.size()[0]
+    img_dim = before.size()[1:]
+
+    with torch.no_grad():
+        fake_after = applier_ref(before, after_ref)
+        fake_before_ref = remover(after_ref)
+
+
+    row = torch.zeros([4 * batch_size, *img_dim])
+    row[0::4] = before.detach()
+    row[1::4] = after_ref.detach()
+    row[2::4] = fake_after.detach()
+    row[3::4] = fake_before_ref.detach()
+
+    image_grid = vutils.make_grid(row.cpu(), nrow=8, padding=2, normalize=True)
 
     return image_grid
 

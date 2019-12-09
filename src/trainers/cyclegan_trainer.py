@@ -50,7 +50,7 @@ class CycleGAN_Trainer(BaseTrainer):
         }
 
         # Generate makeup for a sample no-makeup faces and reference makeup faces
-        num_test = 4
+        num_test = 20
         self._generated_grids = []
         random_indices = random.sample(range(len(self.dataset)), num_test)
         self._fixed_before = torch.stack(

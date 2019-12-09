@@ -55,11 +55,14 @@ class PairedCycleGAN_Trainer(BaseTrainer):
         }
 
         # Generate makeup for a sample no-makeup faces and reference makeup faces
-        num_test = 4
+        num_test = 10
         self._generated_grids = []
+        
         random_indices = random.sample(range(len(self.dataset)), num_test)
         self._fixed_before = torch.stack(
             [self.dataset[i]["before"] for i in random_indices], dim=0).to(self.device)
+        
+        random_indices = random.sample(range(len(self.dataset)), num_test)
         self._fixed_after = torch.stack(
             [self.dataset[i]["after"] for i in random_indices], dim=0).to(self.device)
 
@@ -234,11 +237,13 @@ class PairedCycleGAN_Trainer(BaseTrainer):
 
         # Report training stats
         if should_report_stats or finished_epoch:
-            self.report_training_stats()
+            self.report_training_stats()  # @TODO: this happens twice for some reason?
 
         # Check generator's progress by recording its output on a fixed input
         if should_generate_grid:
-            grid = generate_applier_grid(self.model.remover.G, self._fixed_after)
+            # grid = generate_applier_grid(self.model.remover.G, self._fixed_after)
+            grid = generate_makeup_grid(self.model.applier.G, self.model.remover.G,
+                                        self._fixed_before, self._fixed_after)
             self._generated_grids.append(grid)
 
 
