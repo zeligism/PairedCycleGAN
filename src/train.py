@@ -290,20 +290,28 @@ def main(args):
     transform = make_transform(model_args["image_size"])
     weights_init = create_weights_init()
 
+
     # Train makeup remover using CycleGAN
     unpaired_dataset = MakeupDataset(**dataset_args, transform=transform, reverse=True)
+    
     facecleaner_cyclegan = MaskCycleGAN(**model_args)
-    subtrainer = CycleGAN_Trainer(facecleaner_cyclegan, unpaired_dataset, **trainer_args,
-                                  name="makeupgan.remover", weights_init=weights_init)
+    facecleaner_cyclegan.apply(weights_init)
+
+    subtrainer = CycleGAN_Trainer(facecleaner_cyclegan, unpaired_dataset,
+                                  name="makeupgan.remover", **trainer_args)
     subtrainer.run(num_epochs=args.num_epochs, save_results=args.save_results)
+
 
     # Train PairedCycleGAN, and assign to it the pre-trained makeup remover
     paired_dataset = MakeupDataset(**dataset_args, transform=transform,
                                    with_landmarks=True, paired=True)
+
     makeup_pcgan = PairedCycleGAN(**model_args)
     makeup_pcgan.remover = facecleaner_cyclegan.applier  # as in "applying the makeup cleaning"
-    trainer = PairedCycleGAN_Trainer(makeup_pcgan, paired_dataset, **trainer_args,
-                                     name="makeupgan", weights_init=weights_init)
+    makeup_pcgan.applier.apply(weights_init)
+
+    trainer = PairedCycleGAN_Trainer(makeup_pcgan, paired_dataset,
+                                     name="makeupgan", **trainer_args)
     trainer.run(num_epochs=args.num_epochs, save_results=args.save_results)
 
 

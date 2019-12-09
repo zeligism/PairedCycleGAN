@@ -5,7 +5,6 @@ import torch
 
 from pprint import pformat
 from collections import defaultdict
-from .utils.init_utils import create_weights_init
 from .utils.report_utils import plot_lines
 
 
@@ -20,7 +19,6 @@ class BaseTrainer:
         num_workers=0,
         batch_size=4,
         stats_interval=10,
-        weights_init=create_weights_init(),
         description="no description given",
         **kwargs):
         """
@@ -74,9 +72,6 @@ class BaseTrainer:
         self.model = self.model.to(self.device)
         if self.device.type == "cuda" and self.num_gpu > 1:
             self.model = torch.nn.DistributedDataParallel(self.model, list(range(self.num_gpu)))
-
-        # Initialize model
-        self.model.apply(weights_init)
 
 
     def load_model(self, model_path):
@@ -222,6 +217,7 @@ class BaseTrainer:
         info = {
             "name": self.name,
             "iters": self.iters - 1,
+            "batch_size": self.batch_size,
         }
 
         timestamp = datetime.datetime.now().strftime("%y%m%d-%H%M%S")
