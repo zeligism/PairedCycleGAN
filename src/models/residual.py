@@ -1,5 +1,6 @@
 
 import torch.nn as nn
+from style import ChannelNoise
 
 
 class ResidualBlock(nn.Module):
@@ -19,7 +20,8 @@ class ResidualBlock(nn.Module):
                       padding=dilation[0], dilation=dilation[0], bias=False),
             nn.BatchNorm2d(out_channels),
             nn.ReLU(),
-            nn.Dropout(p=dropout_p),
+            ChannelNoise(out_channels),
+            #nn.Dropout(p=dropout_p),
             ### Conv 3x3 ###
             nn.Conv2d(out_channels, out_channels, 3,
                       padding=dilation[1], dilation=dilation[1], bias=False),

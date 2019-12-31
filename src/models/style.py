@@ -31,14 +31,14 @@ class ChannelNoise(nn.Module):
 
     def __init__(self, num_channels, std=0.02):
         super().__init__()
-        self.num_channels = num_channels
         self.std = std
-
-        self.scale = nn.Parameter(torch.Tensor([1.]))
+        self.scale = nn.Parameter(torch.ones(1, 3, 1, 1))
 
 
     def forward(self, x):
-        noise = self.std * torch.randn(1, self.num_channels, 1, 1)
+        noise_size = [x.size()[0], 1, *x.size()[2:]]  # single channel
+        noise = self.std * torch.randn(noise_size).to(x)
+
         return x + self.scale * noise
 
 
