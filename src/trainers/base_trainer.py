@@ -8,6 +8,10 @@ from collections import defaultdict
 from .utils.report_utils import plot_lines
 
 
+# @TODO: implement TrainerRecord
+# @TODO: implement TrainerSchedule
+
+
 class BaseTrainer:
     """The base trainer class."""
 
@@ -118,10 +122,8 @@ class BaseTrainer:
             num_epochs: Number of epochs to run.
         """
 
-        self.num_epochs = num_epochs
-
         # Train until dataset sampler is exhausted (i.e. until it throws StopIteration)
-        self.init_dataset_sampler()
+        self.init_dataset_sampler(num_epochs)
 
         try:
             print(f"Starting training {self.name}...")
@@ -136,36 +138,41 @@ class BaseTrainer:
             print("Finished training.")
 
 
-    def data_generator(self, num_epochs):
+    def init_dataset_sampler(self, num_epochs):
         """
-        A generator that yields data from the dataset, exhausting it `num_epochs` times.
+        Initializes the sampler (or iterator) of the dataset.
 
         Args:
             num_epochs: Number of epochs.
         """
-
-        data_loader_config = {
+        loader_config = {
             "batch_size": self.batch_size,
             "shuffle": True,
             "num_workers": self.num_workers,
         }
+        self._dataset_sampler = iter(self.sample_loader(num_epochs, loader_config))
 
-        for self.epoch in range(1, num_epochs + 1):
-            data_loader = torch.utils.data.DataLoader(self.dataset, **data_loader_config)
+
+    def sample_loader(self, num_epochs, loader_config):
+        """
+        A generator that yields samples from the dataset, exhausting it `num_epochs` times.
+
+        Args:
+            num_epochs: Number of epochs.
+            loader_config: Configuration for pytorch's data loader.
+        """
+        
+        self.num_epochs = num_epochs + self.epoch - 1  # last epoch
+
+        for self.epoch in range(self.epoch, self.num_epochs + 1):
+            data_loader = torch.utils.data.DataLoader(self.dataset, **loader_config)
             for self.batch, sample in enumerate(data_loader, 1):
                 yield sample
 
 
-    def init_dataset_sampler(self):
-        """
-        Initializes the sampler (or iterator) of the dataset.
-        """
-        self._dataset_sampler = iter(self.data_generator(self.num_epochs))
-
-
     def sample_dataset(self):
         """
-        Samples the dataset.
+        Samples the dataset. To be called by the client.
 
         Returns:
             A sample from the dataset.
@@ -173,16 +180,16 @@ class BaseTrainer:
         return next(self._dataset_sampler)
 
 
-    def train_step(self):
+    def pre_train_step(self):
         """
-        Makes one training step.
+        The training preparation, or what happens before each training step.
         """
         pass
 
 
-    def pre_train_step(self):
+    def train_step(self):
         """
-        The training preparation, or what happens before each training step.
+        Makes one training step.
         """
         pass
 
@@ -280,16 +287,6 @@ class BaseTrainer:
         """
         for key, value in kwargs.items():
             self._data[key].append(value)
-
-
-    def clear_data(self, label):
-        """
-        Clears the data list given by `label`.
-
-        Args:
-            label: Name/label of the data list.
-        """
-        self._data[label] = []
 
 
     def __repr__(self):

@@ -32,7 +32,7 @@ class ChannelNoise(nn.Module):
     def __init__(self, num_channels, std=0.02):
         super().__init__()
         self.std = std
-        self.scale = nn.Parameter(torch.ones(1, 3, 1, 1))
+        self.scale = nn.Parameter(torch.ones(1, num_channels, 1, 1))
 
 
     def forward(self, x):

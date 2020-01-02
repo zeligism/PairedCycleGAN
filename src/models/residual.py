@@ -1,6 +1,6 @@
 
 import torch.nn as nn
-from style import ChannelNoise
+from .style import ChannelNoise
 
 
 class ResidualBlock(nn.Module):
