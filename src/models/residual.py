@@ -1,5 +1,7 @@
 
 import torch.nn as nn
+import torch.nn.functional as F
+
 from .style import ChannelNoise
 
 
@@ -21,7 +23,6 @@ class ResidualBlock(nn.Module):
             nn.BatchNorm2d(out_channels),
             nn.ReLU(),
             ChannelNoise(out_channels),
-            #nn.Dropout(p=dropout_p),
             ### Conv 3x3 ###
             nn.Conv2d(out_channels, out_channels, 3,
                       padding=dilation[1], dilation=dilation[1], bias=False),
@@ -33,7 +34,7 @@ class ResidualBlock(nn.Module):
 
         residual = x if self.downsample is None else self.downsample(x)
 
-        return self.main(x) + residual
+        return F.relu(self.main(x) + residual)
 
 
 class ResidualBottleneck(nn.Module):
@@ -72,5 +73,5 @@ class ResidualBottleneck(nn.Module):
 
         residual = x if self.downsample is None else self.downsample(x)
 
-        return self.main(x) + residual
+        return F.relu(self.main(x) + residual)
 
