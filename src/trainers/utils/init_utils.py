@@ -21,7 +21,16 @@ def create_weights_init(conv_std=0.02, batchnorm_std=0.02):
             nn.init.normal_(module.weight.data, 1.0, batchnorm_std)
             nn.init.constant_(module.bias.data, 0)
 
-    return weights_init
+    def weights_init_kaiming(module):
+        if isinstance(module, nn.Conv2d):
+            nn.init.kaiming_normal_(module.weight, nonlinearity="relu")
+        elif isinstance(module, nn.ConvTranspose2d):
+            nn.init.kaiming_normal_(module.weight, nonlinearity="leaky_relu")
+        elif isinstance(module, nn.BatchNorm2d):
+            nn.init.constant_(module.weight, 1)
+            nn.init.constant_(module.bias, 0)
+
+    return weights_init_kaiming
 
 
 def init_optim(params, optim_choice="sgd", lr=1e-4, momentum=0.0, betas=(0.9, 0.999)):

@@ -8,10 +8,6 @@ from collections import defaultdict
 from .utils.report_utils import plot_lines
 
 
-# @TODO: implement TrainerRecord
-# @TODO: implement TrainerSchedule
-
-
 class BaseTrainer:
     """The base trainer class."""
 
@@ -162,12 +158,14 @@ class BaseTrainer:
             loader_config: Configuration for pytorch's data loader.
         """
         
-        self.num_epochs = num_epochs + self.epoch - 1  # last epoch
+        self.num_epochs = num_epochs + self.epoch - 1
 
         for self.epoch in range(self.epoch, self.num_epochs + 1):
             data_loader = torch.utils.data.DataLoader(self.dataset, **loader_config)
             for self.batch, sample in enumerate(data_loader, 1):
                 yield sample
+
+        self.epoch += 1
 
 
     def sample_dataset(self):

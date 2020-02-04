@@ -2,6 +2,7 @@
 import os
 import argparse
 import pickle
+import cv2
 import numpy as np
 import face_recognition
 from PIL import Image, ImageDraw
@@ -18,6 +19,73 @@ DEST_DIR = os.path.join(FILE_DIR, "processing", "faces")
 
 
 #################### FACES ####################
+
+
+def centroid(points):
+    xs, ys = zip(*points)
+    xc = sum(xs) / len(xs)
+    yc = sum(ys) / len(ys)
+    return round(xc), round(yc)
+
+
+def align_eyes_horizontally(face_img):
+    landmarks = face_recognition.face_landmarks(np.array(face_img))
+    if len(landmarks) == 0: raise Exception(" Couldn't extract any faces.")
+
+    left_eye = centroid(landmarks[0]["left_eye"])
+    right_eye = centroid(landmarks[0]["right_eye"])
+    h = right_eye[1] - left_eye[1]
+    w = right_eye[0] - left_eye[0]
+    angle = np.arcsin(h / np.sqrt(h*h + w*w)) * 180.0 / np.pi
+
+    return face_img.rotate(angle)
+
+
+def zoom_on_face(face_img, scale=1.2):
+    landmarks = face_recognition.face_landmarks(np.array(face_img))
+    if len(landmarks) == 0: raise Exception(" Couldn't extract any faces.")
+
+    landmarks_list = [x for xs in landmarks[0].values() for x in xs]
+    x, y, w, h = cv2.boundingRect(np.array(landmarks_list))
+    y -= (scale - 1) * 0.7 * h
+    x -= (scale - 1) * 0.5 * w
+    h *= scale
+    w *= scale
+
+    return face_img.crop((x, y, x+w, y+h))
+
+
+def extract_face(file_name, source_dir, dest_dir):
+    """
+    Extract the first detected face from the image in `file_name` and save it.
+
+    Args:
+        file_name: The name of the file (image).
+        source_dir: Directory of source images.
+        dest_dir: Directory where processed images will be saved.
+
+    Returns:
+        The name of the face image.
+    """
+
+    face_image_name = file_name
+
+    # Check if destination image already exists (i.e. processed previously)
+    face_image_path = os.path.join(dest_dir, face_image_name)
+    if not os.path.exists(face_image_path):
+        # load image and extract faces from it
+        source_path = os.path.join(source_dir, file_name)
+        #image = face_recognition.load_image_file(source_path)
+        face_img = Image.open(source_path).convert("RGB")
+
+        face_img = align_eyes_horizontally(face_img)
+        face_img = zoom_on_face(face_img)
+
+        # Crop image and save as PIL
+        face_img.save(face_image_path)
+
+    return face_image_name
+
 
 def extract_faces(source_dir, faces_dir, with_landmarks=True):
     """
@@ -48,52 +116,11 @@ def extract_faces(source_dir, faces_dir, with_landmarks=True):
             print("Done.")
 
         except Exception as e:
-            print("Failed."); print(e)
+            print("Failed."); print(f"  {str(e)}")
 
+    # Delete useless files
     clean_faces(faces_dir)
     if with_landmarks: clean_landmarks(faces_dir, landmarks_dir)
-
-
-def extract_face(file_name, source_dir, dest_dir):
-    """
-    Extract the first detected face from the image in `file_name` and save it.
-
-    Args:
-        file_name: The name of the file (image).
-        source_dir: Directory of source images.
-        dest_dir: Directory where processed images will be saved.
-
-    Returns:
-        The name of the face image.
-    """
-
-    face_image_name = file_name
-
-    # Check if destination image already exists (i.e. processed previously)
-    face_image_path = os.path.join(dest_dir, face_image_name)
-    if not os.path.exists(face_image_path):
-        # load image and extract faces from it
-        source_path = os.path.join(source_dir, file_name)
-        image = face_recognition.load_image_file(source_path)
-        face_locations = face_recognition.face_locations(image)
-
-        print("Extracted {} face(s)... ".format(len(face_locations)), end="")
-        if len(face_locations) == 0:
-            raise Exception(" Couldn't extract any faces.")
-
-        # Crop face and save
-        top, right, bottom, left = face_locations[0]
-        height, width = len(image), len(image[0])
-        # Zoom out a little bit (20% height, 15% width, with respect to face size)
-        hpad, wpad = int(0.20 * (bottom-top)), int(0.15 * (right-left))
-        top, bottom = max(0, top - hpad), min(height, bottom + hpad)
-        left, right = max(0, left - wpad), min(width, right + wpad)
-        # Crop image and save as PIL
-        face_image = image[top:bottom, left:right]
-        pil_image = Image.fromarray(face_image)
-        pil_image.save(face_image_path)
-
-    return face_image_name
 
 
 def clean_faces(faces_dir):

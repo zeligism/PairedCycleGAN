@@ -53,6 +53,15 @@ class PairedCycleGAN_Trainer(BaseTrainer):
                 # "G": init_optim([]),
             }
         }
+        self.optim_schedulers = [
+            torch.optim.lr_scheduler.CyclicLR(optim, base_lr=5e-5, max_lr=1e-3)
+            #torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=50)
+            for optim in sub_optims for sub_optims in self.optims
+        ]
+
+        # Data distribution's noise std
+        self.before_noise_std = torch.tensor([.01], device=self.device)
+        self.after_noise_std  = torch.tensor([.01], device=self.device)
 
         # Generate makeup for a sample no-makeup faces and reference makeup faces
         num_test = 10
@@ -121,11 +130,20 @@ class PairedCycleGAN_Trainer(BaseTrainer):
 
     def D_step(self, real_after, real_before, lm_after, lm_before):
 
+        # Add noise
+        noise_after = torch.randn_like(real_after) * self.after_noise_std
+        noise_before = torch.randn_like(real_before) * self.before_noise_std
+        real_after += noise_after
+        real_before += noise_before
+
         # Sample from generators
         with torch.no_grad():
             fake_after = self.model.applier.G(real_before, real_after)
             fake_before = self.model.remover.G(real_after)
+            fake_after += noise_after
+            fake_before += noise_before
 
+        # Sample fake styles
         real_styles = self.sample_real_styles(real_after, real_before, lm_after, lm_before)
         fake_styles = self.sample_fake_styles(real_after, fake_after)
 
@@ -149,10 +167,19 @@ class PairedCycleGAN_Trainer(BaseTrainer):
 
     def G_step(self, real_after, real_before):
 
+        # Add noise
+        noise_after = torch.randn_like(real_after) * self.after_noise_std
+        noise_before = torch.randn_like(real_before) * self.before_noise_std
+        real_after += noise_after
+        real_before += noise_before
+
         # Sample from generators
         fake_after = self.model.applier.G(real_before, real_after)
         fake_before = self.model.remover.G(real_after)
+        fake_after += noise_after
+        fake_before += noise_before
 
+        # Sample fake styles
         fake_styles = self.sample_fake_styles(real_after, fake_after)
 
         # Zero gradients
