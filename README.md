@@ -19,9 +19,10 @@ Just choose the model you want (in our case, it is the PairedCycleGAN), and then
 First, you need conda. Then do this:
 ```
 conda create -n automakeup
-conda install -n automakeup pip pyyaml pytorch torchvision -c pytorch
-pip install cmake 
-pip install face_recognition
+conda activate automakeup
+conda install python=3.7 pip pyyaml pillow=6.1 matplotlib opencv pytorch torchvision -c pytorch
+python -m pip install cmake 
+python -m pip install face_recognition
 ```
 When running pip, make sure you're running the one you installed with conda inside `automakeup` env.
 
