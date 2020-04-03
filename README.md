@@ -14,3 +14,21 @@ Automatic makeup generation.
 ## Training
 
 Just choose the model you want (in our case, it is the PairedCycleGAN), and then train it using its corresponding trainer. I created these trainers for rapid testing purposes.
+
+## Requirements
+First, you need conda. Then do this:
+```
+conda create -n automakeup
+conda install -n automakeup pip pyyaml pytorch torchvision -c pytorch
+pip install cmake 
+pip install face_recognition
+```
+When running pip, make sure you're running the one you installed with conda inside `automakeup` env.
+
+Now run the training process using:
+```
+conda activate automakeup
+cd src
+python train.py
+```
+
