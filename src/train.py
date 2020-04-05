@@ -18,9 +18,6 @@ from trainers.pairedcyclegan_trainer import PairedCycleGAN_Trainer
 from trainers.utils.init_utils import create_weights_init
 
 
-# @TODO: add logging
-# @TODO: align eyes of faces
-
 FILE_DIR = os.path.dirname(os.path.realpath(__file__))
 DATASET_DIR = os.path.join(FILE_DIR, "dataset", "data", "processing", "faces")
 

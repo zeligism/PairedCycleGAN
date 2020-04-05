@@ -144,7 +144,7 @@ class MakeupDataset(data_utils.Dataset):
             The landmarks of the image as a tensor.
         """
 
-        unnormalize = lambda t: t * 0.5 + 0.5  # @XXX: hard-coded un-normalization
+        unnormalize = lambda t: t * 0.5 + 0.5  # XXX: hard-coded un-normalization
         to_uint8_rgb = lambda t: (255 * t).round().to(torch.uint8)
         torch_to_numpy = lambda t: t.permute(1, 2, 0).numpy()
 

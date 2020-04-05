@@ -264,7 +264,7 @@ class PairedCycleGAN_Trainer(BaseTrainer):
 
         # Report training stats
         if should_report_stats or finished_epoch:
-            self.report_training_stats()  # @TODO: this happens twice for some reason?
+            self.report_training_stats()
 
         # Check generator's progress by recording its output on a fixed input
         if should_generate_grid:

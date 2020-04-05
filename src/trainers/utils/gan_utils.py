@@ -2,8 +2,6 @@
 import torch
 import torch.nn.functional as F
 
-# @TODO: Docs.
-
 
 def get_D_loss(D, real, fake, gan_type="gan", gp_coeff=10.):
 
@@ -47,7 +45,7 @@ def get_G_loss(D, fake, gan_type="gan"):
 
 def D_loss_GAN(D_on_real, D_on_fake):
     
-    # Create (noisy) real and fake labels @XXX
+    # Create (noisy) real and fake labels XXX
     real_label = 0.95 + 0.05 * torch.rand_like(D_on_real)
     fake_label = 0.05 + 0.05 * torch.rand_like(D_on_fake)
 

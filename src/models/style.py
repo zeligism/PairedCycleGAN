@@ -4,7 +4,7 @@ import torch.nn as nn
 
 EPS = 1e-8
 
-# @TODO: Style modules.
+# TODO: Style modules.
 
 class LatentMapper(nn.Module):
     """

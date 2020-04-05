@@ -100,7 +100,7 @@ class GAN_Trainer(BaseTrainer):
         for _ in range(self.D_iters):
             # Sample real data from the dataset
             sample = self.sample_dataset()
-            real = sample["before"].to(self.device)  # @XXX
+            real = sample["before"].to(self.device)
 
             # Sample latent and train discriminator
             latent = self.sample_latent()
