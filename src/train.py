@@ -144,7 +144,7 @@ def load_config(config_key, config_file="config.yaml"):
         KeyError: if config_key is not found in the root level of the config.
     """
     with open(config_file) as f:
-        all_configs = yaml.load(f)
+        all_configs = yaml.full_load(f)
         try:
             return all_configs[config_key]
         except KeyError:
