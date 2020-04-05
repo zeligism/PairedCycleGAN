@@ -18,15 +18,18 @@ Just choose the model you want (in our case, it is the PairedCycleGAN), and then
 ## Requirements
 First, you need conda. Then do this:
 ```
-conda create -n automakeup
+conda create -n automakeup -c pytorch python=3.7 pip pyyaml pillow=6.1 matplotlib opencv pytorch torchvision
 conda activate automakeup
-conda install python=3.7 pip pyyaml pillow=6.1 matplotlib opencv pytorch torchvision -c pytorch
 python -m pip install cmake 
 python -m pip install face_recognition
+conda deactivate
 ```
-When running pip, make sure you're running the one you installed with conda inside `automakeup` env.
+The last step takes some time because it installs dlib.
+When running pip, make sure you're running the one you installed in `automakeup` env.
+To ensure that, I activate `automakeup` env and use `python -m pip install` instead of simply `pip install`.
+Also, `cmake` need to be installed in a separate step before `face_recognition` for some reason. I'm thinking of using another lightweight face recognition library at the moment (this one is lightweight and simple in terms of API, but installing dlib can be non-straightforward sometimes).
 
-Now run the training process using:
+To run the training process, use:
 ```
 conda activate automakeup
 cd src
