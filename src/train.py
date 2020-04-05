@@ -112,8 +112,10 @@ def parse_args():
     parser.add_argument("--gp-coeff", type=float, default=10.0,
         help="a coefficient to multiply with the gradient penalty in the loss of WGAN-GP.")
 
-    parser.add_argument("--stats-interval", type=positive(int), default=50,
+    parser.add_argument("--report-interval", type=positive(int), default=50,
         help="the interval in which a report of the training stats will be shown to the console.")
+    parser.add_argument("--save-interval", type=positive(int), default=10000,
+        help="the interval in which the model will be saved.")
     parser.add_argument("--generate-grid-interval", type=positive(int), default=200,
         help="the interval in which the progress of the generator will be checked and recorded.")
 
@@ -213,7 +215,8 @@ def get_trainer_args(args):
         "D_iters": args.D_iters,
         "clamp": args.clamp,
         "gp_coeff": args.gp_coeff,
-        "stats_interval": args.stats_interval,
+        "report_interval": args.report_interval,
+        "save_interval": args.save_interval,
         "generate_grid_interval": args.generate_grid_interval,
     }
 

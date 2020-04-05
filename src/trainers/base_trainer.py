@@ -2,6 +2,7 @@
 import os
 import datetime
 import torch
+from torch.utils.tensorboard import SummaryWriter
 
 from pprint import pformat
 from collections import defaultdict
@@ -18,7 +19,8 @@ class BaseTrainer:
         num_gpu=1,
         num_workers=0,
         batch_size=4,
-        stats_interval=10,
+        report_interval=10,
+        save_interval=100000,
         description="no description given",
         **kwargs):
         """
@@ -33,7 +35,8 @@ class BaseTrainer:
             num_gpu: Number of GPUs to use for training.
             num_workers: Number of workers sampling from the dataset.
             batch_size: Size of the batch. Must be > num_gpu.
-            stats_interval: Report stats every `stats_interval` batch.
+            report_interval: Report stats every `report_interval` iters.
+            save_interval: Save model every `save_interval` iters.
             description: Description of the experiment the trainer is running.
         """
 
@@ -48,9 +51,12 @@ class BaseTrainer:
         self.num_workers = num_workers
         self.batch_size = batch_size
 
-        self.stats_interval = stats_interval
+        self.report_interval = report_interval
+        self.save_interval = save_interval
         self.description = description
+        self.save_results = False
 
+        self.start_time = datetime.datetime.now()
         self.iters = 1  # current iteration (i.e. # of batches processed so far)
         self.batch = 1  # current batch
         self.epoch = 1  # current epoch
@@ -59,6 +65,8 @@ class BaseTrainer:
 
         self._dataset_sampler = iter(())  # generates samples from the dataset
         self._data = defaultdict(list)  # contains data of experiment
+
+        self.writer = None
 
         # Load model if necessary
         if load_model_path is not None:
@@ -88,6 +96,11 @@ class BaseTrainer:
         torch.save(self.model.state_dict(), model_path)
 
 
+    def time_since_start(self):
+        elapsed_time = datetime.datetime.now() - self.start_time
+        return elapsed_time.total_seconds()
+
+
     def run(self, num_epochs, save_results=False):
         """
         Runs the trainer. Trainer will train the model and then save it.
@@ -97,20 +110,26 @@ class BaseTrainer:
             num_epochs: Number of epochs to run.
             save_results: A flag indicating whether we should save the results this run.
         """
+        self.num_epochs = num_epochs + self.epoch - 1
+        self.save_results = save_results
+        self.start_time = datetime.datetime.now()
 
-        if save_results:
-            # Create results directory if it hasn't been created yet
+        # Create experiment directory
+        experiment_name = self.get_experiment_name()
+        experiment_dir = os.path.join(self.results_dir, experiment_name)
+        if self.save_results:
             if not os.path.isdir(self.results_dir): os.mkdir(self.results_dir)
+            if not os.path.isdir(experiment_dir): os.mkdir(experiment_dir)
 
-        try:
-            # Try training the model
-            self.train(num_epochs)
-        finally:
-            # Always stop trainer and report results
-            self.stop(save_results)
+        with SummaryWriter(f"runs/{experiment_name}") as self.writer:
+            # Try training the model, then stop the training when an exception is thrown
+            try:
+                self.train()
+            finally:
+                self.stop()
 
 
-    def train(self, num_epochs):
+    def train(self):
         """
         Train model on dataset for `num_epochs` epochs.
 
@@ -119,7 +138,7 @@ class BaseTrainer:
         """
 
         # Train until dataset sampler is exhausted (i.e. until it throws StopIteration)
-        self.init_dataset_sampler(num_epochs)
+        self.init_dataset_sampler()
 
         try:
             print(f"Starting training {self.name}...")
@@ -134,7 +153,7 @@ class BaseTrainer:
             print("Finished training.")
 
 
-    def init_dataset_sampler(self, num_epochs):
+    def init_dataset_sampler(self):
         """
         Initializes the sampler (or iterator) of the dataset.
 
@@ -146,10 +165,10 @@ class BaseTrainer:
             "shuffle": True,
             "num_workers": self.num_workers,
         }
-        self._dataset_sampler = iter(self.sample_loader(num_epochs, loader_config))
+        self._dataset_sampler = iter(self.sample_loader(loader_config))
 
 
-    def sample_loader(self, num_epochs, loader_config):
+    def sample_loader(self, loader_config):
         """
         A generator that yields samples from the dataset, exhausting it `num_epochs` times.
 
@@ -157,8 +176,6 @@ class BaseTrainer:
             num_epochs: Number of epochs.
             loader_config: Configuration for pytorch's data loader.
         """
-        
-        self.num_epochs = num_epochs + self.epoch - 1
 
         for self.epoch in range(self.epoch, self.num_epochs + 1):
             data_loader = torch.utils.data.DataLoader(self.dataset, **loader_config)
@@ -196,18 +213,25 @@ class BaseTrainer:
         """
         The training checkpoint, or what happens after each training step.
         """
+        should_report_stats = self.iters % self.report_interval == 0
+        should_save_progress = self.iters % self.save_interval == 0
+        finished_epoch = self.batch == self.num_batches
+
         # Report training stats
-        if self.batch % self.stats_interval == 0:
-            self.report_training_stats()
+        if should_report_stats or finished_epoch:
+            self.report_stats()
+
+        if self.save_results and should_save_progress:
+            model_path = os.path.join(self.results_dir,
+                                      self.get_experiment_name(),
+                                      f"model@{self.iters}.pt")
+            self.save_model(model_path)
 
 
-    def stop(self, save_results=False):
+    def stop(self):
         """
         Stops the trainer, or what happens when the trainer stops.
         Note: This will run even on keyboard interrupts.
-
-        Args:
-            save_results: Results will be saved if True.
         """
         plot_lines(self.get_data_containing("loss"), title="Losses")
 
@@ -221,17 +245,16 @@ class BaseTrainer:
         """
         info = {
             "name": self.name,
-            "iters": self.iters - 1,
             "batch_size": self.batch_size,
         }
 
-        timestamp = datetime.datetime.now().strftime("%y%m%d-%H%M%S")
+        timestamp = self.start_time.strftime("%y%m%d-%H%M%S")
         experiment = delimiter.join(f"{k}={v}" for k,v in info.items())
 
         return "[{}] {}".format(timestamp, experiment)
 
 
-    def report_training_stats(self, precision=3):
+    def report_stats(self, precision=3):
         """
         Default training stats report.
         Prints the current value of each data list recorded.

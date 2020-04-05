@@ -112,6 +112,11 @@ class GAN_Trainer(BaseTrainer):
         
         # Record data
         self.add_data(**D_results, **G_results)
+        results = {**D_results, **G_results}
+        losses = {k: v for k, v in results.items() if k.find("loss") != -1}
+        D_evals = {k: v for k, v in results.items() if k.find("D_on") != -1}
+        self.writer.add_scalars("losses", losses, self.iters)
+        self.writer.add_scalars("D_evals", D_evals, self.iters)
 
 
     def D_step(self, real, latent):
@@ -211,25 +216,21 @@ class GAN_Trainer(BaseTrainer):
     #################### Reporting and Tracking Methods ####################
 
 
-    def stop(self, save_results=False):
+    def stop(self):
         """
         Stops the trainer and report the result of the experiment.
-
-        Args:
-            save_results: Results will be saved if this was set to True.
         """
 
         losses = self.get_data_containing("loss")
         evals = self.get_data_containing("D_on")
 
-        if not save_results:
+        if not self.save_results:
             plot_lines(losses, title="Losses")
             plot_lines(evals, title="Evals")
             return
 
         # Create experiment directory in the model's directory
         experiment_dir = os.path.join(self.results_dir, self.get_experiment_name())
-        if not os.path.isdir(experiment_dir): os.mkdir(experiment_dir)
 
         # Save model
         model_path = os.path.join(experiment_dir, "model.pt")
@@ -257,22 +258,16 @@ class GAN_Trainer(BaseTrainer):
         """
         The post-training step.
         """
-
-        should_report_stats = self.iters % self.stats_interval == 0
-        should_generate_grid = self.iters % self.generate_grid_interval == 0
-        finished_epoch = self.batch == self.num_batches
-
-        # Report training stats
-        if should_report_stats or finished_epoch:
-            self.report_training_stats()
+        super().post_train_step()
 
         # Check generator's progress by recording its output on a fixed input
         if should_generate_grid:
             grid = generate_grid(self.model.G, self._fixed_latent)
             self._generated_grids.append(grid)
+            self.writer.add_image("grid", grid, self.iters)
 
 
-    def report_training_stats(self, precision=3):
+    def report_stats(self, precision=3):
         """
         Reports/prints the training stats to the console.
 
