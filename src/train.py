@@ -293,25 +293,22 @@ def main(args):
 
 
     # Train makeup remover using CycleGAN
-    unpaired_dataset = MakeupDataset(**dataset_args, transform=transform, reverse=True)
-    
-    facecleaner_cyclegan = MaskCycleGAN(**model_args)
-    facecleaner_cyclegan.apply(weights_init)
-
-    subtrainer = CycleGANTrainer(facecleaner_cyclegan, unpaired_dataset,
+    makeup_remover_dataset = MakeupDataset(
+        **dataset_args, transform=transform, reverse=True, paired=False
+    )
+    makeup_remover = MaskCycleGAN(**model_args)
+    subtrainer = CycleGANTrainer(makeup_remover, makeup_remover_dataset,
                                   name="makeupgan.remover", **trainer_args)
     subtrainer.run(num_epochs=args.num_epochs, save_results=args.save_results)
 
-
     # Train PairedCycleGAN, and assign to it the pre-trained makeup remover
-    paired_dataset = MakeupDataset(**dataset_args, transform=transform,
-                                   with_landmarks=True, paired=True)
-
+    # XXX: to pair or not to pair
+    makeup_dataset = MakeupDataset(
+        **dataset_args, transform=transform, with_landmarks=True, paired=True
+    )
     makeup_pcgan = PairedCycleGAN(**model_args)
-    makeup_pcgan.remover = facecleaner_cyclegan.applier  # as in "applying the makeup cleaning"
-    makeup_pcgan.applier.apply(weights_init)
-
-    trainer = PairedCycleGANTrainer(makeup_pcgan, paired_dataset,
+    makeup_pcgan.remover = makeup_remover.applier  # "applying the makeup removing"
+    trainer = PairedCycleGANTrainer(makeup_pcgan, makeup_dataset,
                                      name="makeupgan", **trainer_args)
     trainer.run(num_epochs=args.num_epochs, save_results=args.save_results)
 
