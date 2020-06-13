@@ -51,18 +51,29 @@ class PairedCycleGANTrainer(BaseTrainer):
                 # "G": init_optim([]),
             }
         }
+        """
         self.optim_schedulers = [
             torch.optim.lr_scheduler.CyclicLR(optim, base_lr=5e-5, max_lr=1e-3)
             #torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=50)
             for optim in sub_optims for sub_optims in self.optims
         ]
+        """
+
+        self.constants = {
+            "makeup-adversarial": 0.1,
+            "nomakeup-adversarial": 0.1,
+            "style-adversarial": 0.1,
+            "identity-robustness": 2.0,
+            "style-robustness": 2.0,
+            "mask-sparsity": 0.1,
+        }
 
         # Data distribution's noise std
-        self.before_noise_std = torch.tensor([.01], device=self.device)
-        self.after_noise_std  = torch.tensor([.01], device=self.device)
+        self.before_noise_std = 0.01
+        self.after_noise_std  = 0.01
 
         # Generate makeup for a sample no-makeup faces and reference makeup faces
-        num_test = 10
+        num_test = 12
         self._generated_grids = []
         
         random_indices = random.sample(range(len(self.dataset)), num_test)
@@ -123,15 +134,18 @@ class PairedCycleGANTrainer(BaseTrainer):
         G_loss = self.G_step(real_after, real_before)
 
         # Record data
-        self.add_data(D_loss=D_loss, G_loss=G_loss)
-        self.writer.add_scalars("losses", {"D_loss": D_loss, "G_loss": G_loss}, self.iters)
+        losses = {"D_loss": D_loss, "G_loss": G_loss}
+        self.writer.add_scalars("losses", losses, self.iters)
+        self.add_data(**losses)  # XXX: redundant?
 
 
     def D_step(self, real_after, real_before, lm_after, lm_before):
 
-        # Add noise
+        # Sample noise
         noise_after = torch.randn_like(real_after) * self.after_noise_std
         noise_before = torch.randn_like(real_before) * self.before_noise_std
+
+        # Add noise to real
         real_after += noise_after
         real_before += noise_before
 
@@ -139,42 +153,58 @@ class PairedCycleGANTrainer(BaseTrainer):
         with torch.no_grad():
             fake_after = self.model.applier.G(real_before, real_after)
             fake_before = self.model.remover.G(real_after)
-            fake_after += noise_after
-            fake_before += noise_before
+
+        # Add noise to fake
+        fake_after += noise_after
+        fake_before += noise_before
 
         # Sample fake styles
         real_styles = self.sample_real_styles(real_after, real_before, lm_after, lm_before)
         fake_styles = self.sample_fake_styles(real_after, fake_after)
+
+        # TODO: add noise to style?
 
         # Zero gradients and loss
         self.optims_zero_grad("D")
 
         # Adversarial losses for makeup domain, no-makeup domain, and styles domain
         gan_config = {"gan_type": self.model.gan_type, "gp_coeff": self.gp_coeff}
-        D_loss = 0.1 * get_D_loss(self.model.applier.D, real_after, fake_after, **gan_config)     \
-               + 0.1 * get_D_loss(self.model.remover.D, real_before, fake_before, **gan_config) \
-               + 0.1 * get_D_loss(self.model.style_D, real_styles, fake_styles, **gan_config)
+        c1 = self.constants["makeup-adversarial"]
+        c2 = self.constants["nomakeup-adversarial"]
+        c3 = self.constants["style-adversarial"]
+        D_loss = c1 * get_D_loss(self.model.applier.D, real_after, fake_after, **gan_config)   \
+               + c2 * get_D_loss(self.model.remover.D, real_before, fake_before, **gan_config) \
+               + c3 * get_D_loss(self.model.style_D, real_styles, fake_styles, **gan_config)
 
         # Calculate gradients
         D_loss.backward()
 
         # Make a step of minimizing D's loss
-        self.optims_step("D")
+        #self.optims_step("D")
+        # XXX
+        if self.iters % 10 == 0:
+            self.optims_step("D")
+        else:
+            self.optims["applier"]["D"].step()
 
         return D_loss
 
 
     def G_step(self, real_after, real_before):
 
-        # Add noise
+        # Sample noise
         noise_after = torch.randn_like(real_after) * self.after_noise_std
         noise_before = torch.randn_like(real_before) * self.before_noise_std
+
+        # Add noise to real
         real_after += noise_after
         real_before += noise_before
 
         # Sample from generators
         fake_after = self.model.applier.G(real_before, real_after)
         fake_before = self.model.remover.G(real_after)
+
+        # Add noise to fake
         fake_after += noise_after
         fake_before += noise_before
 
@@ -186,24 +216,35 @@ class PairedCycleGANTrainer(BaseTrainer):
 
         # Adversarial loss for makeup domain, no-makeup domain, and style domain
         gan_config = {"gan_type": self.model.gan_type}
-        G_loss = 0.1 * get_G_loss(self.model.applier.D, fake_after, **gan_config)   \
-               + 0.1 * get_G_loss(self.model.remover.D, fake_before, **gan_config) \
-               + 0.1 * get_G_loss(self.model.style_D, fake_styles, **gan_config)
+        c1 = self.constants["makeup-adversarial"]
+        c2 = self.constants["nomakeup-adversarial"]
+        c3 = self.constants["style-adversarial"]
+        G_loss = c1 * get_G_loss(self.model.applier.D, fake_after, **gan_config)   \
+               + c2 * get_G_loss(self.model.remover.D, fake_before, **gan_config) \
+               + c3 * get_G_loss(self.model.style_D, fake_styles, **gan_config)
 
         # Identity loss
-        G_loss += F.l1_loss(real_before, self.model.remover.G(fake_after))
+        c = self.constants["identity-robustness"]
+        G_loss += c * F.l1_loss(real_before, self.model.remover.G(fake_after))
 
         # Style loss (i.e. style is preserved in fake_after and well-removed in fake_before)
-        G_loss += F.l1_loss(real_after, self.model.applier.G(fake_before, fake_after))
+        c = self.constants["style-robustness"]
+        G_loss += c * F.l1_loss(real_after, self.model.applier.G(fake_before, fake_after))
 
         # Extra sparsity-inducing regularization for makeup mask
-        G_loss += 0.1 * F.l1_loss(real_before, fake_after)
+        c = self.constants["mask-sparsity"]
+        G_loss += c * F.l1_loss(real_before, fake_after)
 
         # Calculate gradients
         G_loss.backward()
 
         # Make a step of minimizing G's loss
-        self.optims_step("G")
+        #self.optims_step("G")
+        # XXX
+        if self.iters % 10 == 0:
+            self.optims_step("G")
+        else:
+            self.optims["applier"]["G"].step()
 
         return G_loss
 
@@ -257,6 +298,13 @@ class PairedCycleGANTrainer(BaseTrainer):
         The post-training step.
         """
         super().post_train_step()
+
+        """
+        if self.iters in (700, 1400):
+            self.constants["identity-robustness"] *= 2
+            self.constants["style-robustness"] *= 2
+            self.constants["mask-sparsity"] *= 2
+        """
 
         should_generate_grid = self.iters % self.generate_grid_interval == 0
 

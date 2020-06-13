@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 
 
-def create_weights_init(conv_std=0.02, batchnorm_std=0.02):
+def create_weights_init(conv_std=0.01, batchnorm_std=0.01):
     """
     A function that returns the weights initialization function for a net,
     which can be used as `net.apply(create_weights_init())`, for example.
@@ -23,9 +23,10 @@ def create_weights_init(conv_std=0.02, batchnorm_std=0.02):
 
     def weights_init_kaiming(module):
         if isinstance(module, nn.Conv2d):
-            nn.init.kaiming_normal_(module.weight, nonlinearity="relu")
+            #nn.init.kaiming_normal_(module.weight, nonlinearity="leaky_relu")
+            nn.init.normal_(module.weight, 0.0, conv_std)
         elif isinstance(module, nn.ConvTranspose2d):
-            nn.init.kaiming_normal_(module.weight, nonlinearity="leaky_relu")
+            nn.init.kaiming_normal_(module.weight, nonlinearity="relu")
         elif isinstance(module, nn.BatchNorm2d):
             nn.init.constant_(module.weight, 1)
             nn.init.constant_(module.bias, 0)
@@ -48,6 +49,8 @@ def init_optim(params, optim_choice="sgd", lr=1e-4, momentum=0.0, betas=(0.9, 0.
 
     if optim_choice == "adam":
         optim = torch.optim.Adam(params, lr=lr, betas=betas)
+    elif optim_choice == "adamw":
+        optim = torch.optim.AdamW(params, lr=lr, betas=betas)
     elif optim_choice == "rmsprop":
         optim = torch.optim.RMSprop(params, lr=lr)
     elif optim_choice == "sgd":
@@ -57,5 +60,3 @@ def init_optim(params, optim_choice="sgd", lr=1e-4, momentum=0.0, betas=(0.9, 0.
 
     return optim
 
-
-    

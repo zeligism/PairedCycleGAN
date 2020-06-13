@@ -2,7 +2,7 @@
 import os
 import datetime
 import torch
-from torch.utils.tensorboard import SummaryWriter
+import torch.utils.tensorboard as tensorboard
 
 from pprint import pformat
 from collections import defaultdict
@@ -21,6 +21,7 @@ class BaseTrainer:
         batch_size=4,
         report_interval=10,
         save_interval=100000,
+        use_tensorboard=False,
         description="no description given",
         **kwargs):
         """
@@ -57,6 +58,7 @@ class BaseTrainer:
         self.save_results = False
 
         self.start_time = datetime.datetime.now()
+        self.stop_time = datetime.datetime.now()
         self.iters = 1  # current iteration (i.e. # of batches processed so far)
         self.batch = 1  # current batch
         self.epoch = 1  # current epoch
@@ -67,6 +69,7 @@ class BaseTrainer:
         self._data = defaultdict(list)  # contains data of experiment
 
         self.writer = None
+        self.use_tensorboard = use_tensorboard
 
         # Load model if necessary
         if load_model_path is not None:
@@ -112,7 +115,6 @@ class BaseTrainer:
         """
         self.num_epochs = num_epochs + self.epoch - 1
         self.save_results = save_results
-        self.start_time = datetime.datetime.now()
 
         # Create experiment directory
         experiment_name = self.get_experiment_name()
@@ -121,11 +123,13 @@ class BaseTrainer:
             if not os.path.isdir(self.results_dir): os.mkdir(self.results_dir)
             if not os.path.isdir(experiment_dir): os.mkdir(experiment_dir)
 
-        with SummaryWriter(f"runs/{experiment_name}") as self.writer:
+        with tensorboard.SummaryWriter(f"runs/{experiment_name}") as self.writer:
             # Try training the model, then stop the training when an exception is thrown
             try:
+                self.start_time = datetime.datetime.now()
                 self.train()
             finally:
+                self.stop_time = datetime.datetime.now()
                 self.stop()
 
 

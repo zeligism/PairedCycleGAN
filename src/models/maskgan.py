@@ -60,6 +60,7 @@ class MaskGenerator(nn.Module):
             ResidualBlock(num_features, num_features),
             ResidualBlock(num_features, num_features, dilation=(2,2)),
             ResidualBlock(num_features, num_features, dilation=(4,4)),
+            ResidualBlock(num_features, num_features, dilation=(8,8)),
             nn.Conv2d(num_features, num_features, 3, padding=2, dilation=2, bias=False),
             nn.ReLU(),
             nn.Conv2d(num_features, 3, 3, padding=1, bias=False),
@@ -79,5 +80,5 @@ class MaskGenerator(nn.Module):
 
         mask = self.mask_generator(features)
 
-        return source + mask
+        return (source + mask).clamp(-1,1) # XXX: range could go outside [-1, 1]
 
