@@ -6,7 +6,8 @@ from .maskgan import MaskGAN
 
 
 class CycleGAN(nn.Module):
-    def __init__(self, num_features,
+    def __init__(self,
+                 num_features=64,
                  image_channels=3,
                  image_size=64,
                  gan_type="gan",
@@ -27,7 +28,8 @@ class CycleGAN(nn.Module):
 
 
 class MaskCycleGAN(nn.Module):
-    def __init__(self, num_features,
+    def __init__(self,
+                 num_features=64,
                  image_channels=3,
                  image_size=64,
                  gan_type="gan",

@@ -8,7 +8,7 @@ from .utils.gan_utils import *
 from .utils.report_utils import *
 
 
-class GAN_Trainer(BaseTrainer):
+class GANTrainer(BaseTrainer):
     """A trainer for a GAN."""
 
     def __init__(self, model, dataset,
@@ -20,7 +20,7 @@ class GAN_Trainer(BaseTrainer):
         generate_grid_interval=200,
         **kwargs):
         """
-        Initializes GAN_Trainer.
+        Initializes GANTrainer.
 
         Note:
             Optimizer's configurations/parameters must be passable to the

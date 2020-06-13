@@ -53,7 +53,12 @@ class DCGAN(nn.Module):
 class DCGAN_Discriminator(nn.Module):
     """The discriminator of a DCGAN"""
 
-    def __init__(self, num_features, image_channels=3, image_size=64, gan_type="gan", max_features=512):
+    def __init__(self,
+                 num_features=64,
+                 image_channels=3,
+                 image_size=64,
+                 gan_type="gan",
+                 max_features=512):
         super().__init__()
 
         using_gradient_penalty = gan_type == "wgan-gp"
@@ -111,7 +116,13 @@ class DCGAN_DiscriminatorBlock(nn.Module):
 class DCGAN_Generator(nn.Module):
     """The generator of a DCGAN"""
 
-    def __init__(self, num_latents, num_features, image_channels=3, image_size=64, gan_type="gan", max_features=512):
+    def __init__(self,
+                 num_latents,
+                 num_features=64,
+                 image_channels=3,
+                 image_size=64,
+                 gan_type="gan",
+                 max_features=512):
         super().__init__()
 
         # Count number of layers (including input) and calculate feature sizes

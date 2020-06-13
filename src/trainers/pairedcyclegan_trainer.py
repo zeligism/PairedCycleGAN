@@ -11,7 +11,7 @@ from .utils.report_utils import *
 from .utils.face_morph.face_morph import face_morph
 
 
-class PairedCycleGAN_Trainer(BaseTrainer):
+class PairedCycleGANTrainer(BaseTrainer):
     """The trainer for PairedCycleGAN."""
 
     def __init__(self, model, dataset,

@@ -7,7 +7,9 @@ from .style import ChannelNoise
 
 class ResidualBlock(nn.Module):
 
-    def __init__(self, in_channels, out_channels,
+    def __init__(self,
+                 in_channels,
+                 out_channels,
                  dilation=(1,1),
                  downsample=None,
                  dropout_p=0.0):
@@ -39,7 +41,9 @@ class ResidualBlock(nn.Module):
 
 class ResidualBottleneck(nn.Module):
 
-    def __init__(self, in_channels, out_channels,
+    def __init__(self,
+                 in_channels,
+                 out_channels,
                  downsample=None,
                  dilation=1,
                  dropout_p=0.0):

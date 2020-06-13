@@ -13,13 +13,12 @@ from dataset.transforms import MakeupSampleTransform
 from models.cyclegan import MaskCycleGAN
 from models.pairedcyclegan import PairedCycleGAN
 
-from trainers.cyclegan_trainer import CycleGAN_Trainer
-from trainers.pairedcyclegan_trainer import PairedCycleGAN_Trainer
+from trainers.cyclegan_trainer import CycleGANTrainer
+from trainers.pairedcyclegan_trainer import PairedCycleGANTrainer
 from trainers.utils.init_utils import create_weights_init
 
 
 # @TODO: add logging
-# @TODO: align eyes of faces
 
 FILE_DIR = os.path.dirname(os.path.realpath(__file__))
 DATASET_DIR = os.path.join(FILE_DIR, "dataset", "data", "processing", "faces")
@@ -298,7 +297,7 @@ def main(args):
     facecleaner_cyclegan = MaskCycleGAN(**model_args)
     facecleaner_cyclegan.apply(weights_init)
 
-    subtrainer = CycleGAN_Trainer(facecleaner_cyclegan, unpaired_dataset,
+    subtrainer = CycleGANTrainer(facecleaner_cyclegan, unpaired_dataset,
                                   name="makeupgan.remover", **trainer_args)
     subtrainer.run(num_epochs=args.num_epochs, save_results=args.save_results)
 
@@ -311,7 +310,7 @@ def main(args):
     makeup_pcgan.remover = facecleaner_cyclegan.applier  # as in "applying the makeup cleaning"
     makeup_pcgan.applier.apply(weights_init)
 
-    trainer = PairedCycleGAN_Trainer(makeup_pcgan, paired_dataset,
+    trainer = PairedCycleGANTrainer(makeup_pcgan, paired_dataset,
                                      name="makeupgan", **trainer_args)
     trainer.run(num_epochs=args.num_epochs, save_results=args.save_results)
 

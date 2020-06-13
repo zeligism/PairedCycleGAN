@@ -7,7 +7,8 @@ from .residual import ResidualBlock
 
 
 class MaskGAN(nn.Module):
-    def __init__(self, num_features,
+    def __init__(self,
+                 num_features=64,
                  image_channels=3,
                  image_size=64,
                  gan_type="gan",

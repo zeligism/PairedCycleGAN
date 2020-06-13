@@ -10,7 +10,7 @@ from .utils.gan_utils import *
 from .utils.report_utils import *
 
 
-class CycleGAN_Trainer(BaseTrainer):
+class CycleGANTrainer(BaseTrainer):
     """The trainer for CycleGAN."""
 
     def __init__(self, model, dataset,

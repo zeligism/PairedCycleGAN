@@ -63,7 +63,7 @@ class BaseTrainer:
         # Load model if necessary
         if load_model_path is not None:
             self.load_model(load_model_path)
-        
+
         # Initialize device
         using_cuda = torch.cuda.is_available() and self.num_gpu > 0
         self.device = torch.device("cuda:0" if using_cuda else "cpu")

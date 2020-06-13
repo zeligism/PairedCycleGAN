@@ -6,7 +6,12 @@ from .maskgan import MaskGAN
 
 
 class PairedCycleGAN(nn.Module):
-    def __init__(self, num_features, image_channels=3, image_size=64, gan_type="gan", **kwargs):
+    def __init__(self,
+                 num_features=64,
+                 image_channels=3,
+                 image_size=64,
+                 gan_type="gan",
+                 **kwargs):
         super().__init__()
 
         self.num_features = num_features
