@@ -34,7 +34,7 @@ class PairedCycleGAN(nn.Module):
 class StyleDiscriminator(DCGAN_Discriminator):
     def __init__(self, *args, **kwargs):
 
-        kwargs["image_channels"] *= 2  # @XXX: extract features from img first?
+        kwargs["image_channels"] *= 2  # XXX: extract features from img first?
         super().__init__(*args, **kwargs)
 
 

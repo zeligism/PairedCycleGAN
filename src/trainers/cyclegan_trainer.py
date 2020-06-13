@@ -19,7 +19,6 @@ class CycleGANTrainer(BaseTrainer):
                  D_iters=5,
                  clamp=(-0.01, 0.01),
                  gp_coeff=10.,
-                 stats_interval=50,
                  generate_grid_interval=200,
                  **kwargs):
         """
@@ -34,7 +33,6 @@ class CycleGANTrainer(BaseTrainer):
         self.D_iters = D_iters
         self.clamp = clamp
         self.gp_coeff = gp_coeff
-        self.stats_interval = stats_interval
         self.generate_grid_interval = generate_grid_interval
 
         # Initialize optimizers for generator and discriminator
@@ -105,6 +103,7 @@ class CycleGANTrainer(BaseTrainer):
 
         # Record data
         self.add_data(D_loss=D_loss, G_loss=G_loss)
+        self.writer.add_scalars("Loss", {"D_loss": D_loss, "G_loss": G_loss}, self.iters)
 
 
     def D_step(self, real_after, real_before):
@@ -166,38 +165,30 @@ class CycleGANTrainer(BaseTrainer):
         """
         The post-training step.
         """
+        super().post_train_step()
 
-        should_report_stats = self.iters % self.stats_interval == 0
         should_generate_grid = self.iters % self.generate_grid_interval == 0
-        finished_epoch = self.batch == self.num_batches
-
-        # Report training stats
-        if should_report_stats or finished_epoch:
-            self.report_training_stats()
 
         # Check generator's progress by recording its output on a fixed input
         if should_generate_grid:
             grid = generate_applier_grid(self.model.applier.G, self._fixed_before)
             self._generated_grids.append(grid)
+            self.writer.add_image("grid", grid, self.iters)
 
 
-    def stop(self, save_results=False):
+    def stop(self):
         """
         Stops the trainer and report the result of the experiment.
-
-        Args:
-            save_results: Results will be saved if this was set to True.
         """
 
         losses = self.get_data_containing("loss")
 
-        if not save_results:
+        if not self.save_results:
             plot_lines(losses, title="Losses")
             return
 
         # Create experiment directory in the model's directory
         experiment_dir = os.path.join(self.results_dir, self.get_experiment_name())
-        if not os.path.isdir(experiment_dir): os.mkdir(experiment_dir)
 
         # Save model
         model_path = os.path.join(experiment_dir, "model.pt")

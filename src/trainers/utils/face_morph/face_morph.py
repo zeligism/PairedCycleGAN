@@ -68,7 +68,7 @@ def warp_triangle(t1, t2, img1, img2, alpha=0.8):
     x1, y1, w1, h1 = cv2.boundingRect(t1)
     x2, y2, w2, h2 = cv2.boundingRect(t2)
     
-    # Sometimes, landmarks reside slightly outside the image... @XXX: hacky.
+    # Sometimes, landmarks reside slightly outside the image... XXX: hacky.
     x1, y1, x2, y2 = max(0, x1), max(0, y1), max(0, x2), max(0, y2)
     
     # Offset triangles' coordinates by the bounding rect's coordinates
@@ -95,7 +95,7 @@ def warp_triangle(t1, t2, img1, img2, alpha=0.8):
     patch1_warped = cv2.warpAffine(patch1, affine1to2, (w2,h2),
                                    borderMode=cv2.BORDER_REFLECT_101)
     
-    # Crop out points outside image on the max side. @XXX: hacky but ok.
+    # Crop out points outside image on the max side. XXX: hacky but ok.
     if patch1_warped.shape != patch2.shape:
         patch1_warped = patch1_warped[0:patch2.shape[0], 0:patch2.shape[1]]
         

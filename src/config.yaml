@@ -25,7 +25,8 @@ makeup:
     D_iters: 3
     gp_coeff: 10.
 
-    stats_interval: 2
+    report_interval: 2
+    save_interval: 2
     generate_grid_interval: 2
 
 
@@ -66,7 +67,7 @@ dcgan:
     clamp: [-0.01, 0.01]
     gp_coeff: 10.
 
-    stats_interval: 50
+    report_interval: 50
     generate_grid_interval: 200
 
 
@@ -107,7 +108,7 @@ wgan:
     clamp: [-0.01, 0.01]
     gp_coeff: 10.
 
-    stats_interval: 50
+    report_interval: 50
     generate_grid_interval: 200
 
 
@@ -148,7 +149,7 @@ wgan-gp:
     clamp: [-0.01, 0.01]
     gp_coeff: 10.
 
-    stats_interval: 50
+    report_interval: 50
     generate_grid_interval: 200
 
 
