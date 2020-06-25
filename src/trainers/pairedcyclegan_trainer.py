@@ -287,11 +287,17 @@ class PairedCycleGANTrainer(BaseTrainer):
                 morphed_batch.append(torch.zeros_like(real_before[i]))
                 mask[i] = 0
             else:
-                morphed = face_morph(torch_to_numpy(real_after[i]),
-                                     torch_to_numpy(real_before[i]),
-                                     tensor2D_to_points(lm_after[i]),
-                                     tensor2D_to_points(lm_before[i]))
-                morphed_batch.append(numpy_to_torch(morphed))
+                try:
+                    morphed = face_morph(torch_to_numpy(real_after[i]),
+                                         torch_to_numpy(real_before[i]),
+                                         tensor2D_to_points(lm_after[i]),
+                                         tensor2D_to_points(lm_before[i]))
+                    morphed_batch.append(numpy_to_torch(morphed))
+                except Exception as e:
+                    print("Error: Couldn't morph face. Got the following error:")
+                    print(e)
+                    morphed_batch.append(torch.zeros_like(real_before[i]))
+                    mask[i] = 0
 
         return mask, torch.stack(morphed_batch).to(real_after)
 
@@ -318,7 +324,7 @@ class PairedCycleGANTrainer(BaseTrainer):
             grid = generate_makeup_grid(self.model.applier.G, self.model.remover.G,
                                         self._fixed_before, self._fixed_after)
             self._generated_grids.append(grid)
-            self.writer.add_image("grid", grid, self.iters)
+            self.writer.add_image(f"Image Grid (step = {self.iters})", grid, self.iters)
 
 
     def stop(self):
