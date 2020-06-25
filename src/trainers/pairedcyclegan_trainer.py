@@ -71,6 +71,7 @@ class PairedCycleGANTrainer(BaseTrainer):
         # Data distribution's noise std
         self.before_noise_std = 0.01
         self.after_noise_std  = 0.01
+        self.styles_noise_std = 0.01
 
         # Generate makeup for a sample no-makeup faces and reference makeup faces
         num_test = 12
@@ -136,7 +137,7 @@ class PairedCycleGANTrainer(BaseTrainer):
         # Record data
         losses = {"D_loss": D_loss, "G_loss": G_loss}
         self.writer.add_scalars("losses", losses, self.iters)
-        self.add_data(**losses)  # XXX: redundant?
+        self.add_data(**losses)
 
 
     def D_step(self, real_after, real_before, lm_after, lm_before):
@@ -144,6 +145,7 @@ class PairedCycleGANTrainer(BaseTrainer):
         # Sample noise
         noise_after = torch.randn_like(real_after) * self.after_noise_std
         noise_before = torch.randn_like(real_before) * self.before_noise_std
+        noise_styles = torch.randn_like(real_before) * self.styles_noise_std
 
         # Add noise to real
         real_after += noise_after
@@ -211,6 +213,8 @@ class PairedCycleGANTrainer(BaseTrainer):
         # Sample fake styles
         fake_styles = self.sample_fake_styles(real_after, fake_after)
 
+        # TODO: add noise to style?
+
         # Zero gradients
         self.optims_zero_grad("G")
 
@@ -255,6 +259,7 @@ class PairedCycleGANTrainer(BaseTrainer):
                                                lm_after, lm_before)
 
         # Prepare real same style pair vs. fake same style pair
+        # XXX is this a good idea?
         real_styles = torch.cat([mask * real_after , mask * after2before], dim=1)
 
         return real_styles
@@ -277,7 +282,7 @@ class PairedCycleGANTrainer(BaseTrainer):
         morphed_batch = []
 
         for i in range(batch_size):
-            # Zero mask for no landmarks
+            # Zero mask for no landmarks XXX is this a good idea?
             if lm_after[i].sum() == 0 or lm_before[i].sum() == 0:
                 morphed_batch.append(torch.zeros_like(real_before[i]))
                 mask[i] = 0
