@@ -21,7 +21,7 @@ class BaseTrainer:
         batch_size=4,
         report_interval=10,
         save_interval=100000,
-        use_tensorboard=False,
+        use_tensorboard=False,  # XXX: not implemented yet
         description="no description given",
         **kwargs):
         """
@@ -115,13 +115,6 @@ class BaseTrainer:
         """
         self.num_epochs = num_epochs + self.epoch - 1
         self.save_results = save_results
-
-        # Create experiment directory
-        experiment_name = self.get_experiment_name()
-        experiment_dir = os.path.join(self.results_dir, experiment_name)
-        if self.save_results:
-            if not os.path.isdir(self.results_dir): os.mkdir(self.results_dir)
-            if not os.path.isdir(experiment_dir): os.mkdir(experiment_dir)
 
         with tensorboard.SummaryWriter(f"runs/{experiment_name}") as self.writer:
             # Try training the model, then stop the training when an exception is thrown
@@ -237,6 +230,14 @@ class BaseTrainer:
         Stops the trainer, or what happens when the trainer stops.
         Note: This will run even on keyboard interrupts.
         """
+        # Create experiment directory
+        experiment_name = self.get_experiment_name()
+        experiment_dir = os.path.join(self.results_dir, experiment_name)
+        if self.save_results:
+            if not os.path.isdir(self.results_dir): os.mkdir(self.results_dir)
+            if not os.path.isdir(experiment_dir): os.mkdir(experiment_dir)
+
+        # plot losses, if any
         plot_lines(self.get_data_containing("loss"), title="Losses")
 
 
