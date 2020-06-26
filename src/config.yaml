@@ -6,14 +6,14 @@ makeup:
   model:
     num_features: 64
     image_channels: 3
-    image_size: 64
+    image_size: 256
     gan_type: gan
 
   trainer:
     num_gpu: 1
     num_workers: 8
 
-    batch_size: 16
+    batch_size: 8
 
     D_optim_config:
       optim_choice: adam
@@ -30,9 +30,9 @@ makeup:
     D_iters: 3
     gp_coeff: 10.
 
-    report_interval: 2
-    save_interval: 2
-    generate_grid_interval: 2
+    report_interval: 5
+    save_interval: 500
+    generate_grid_interval: 50
 
 
 ####################################
