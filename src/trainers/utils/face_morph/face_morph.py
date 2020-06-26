@@ -137,8 +137,9 @@ def face_morph(img1, img2, landmarks1=None, landmarks2=None, alpha=0.95):
 
     # Warp each triangle in img1 to its corresponding one in img2
     for t1 in delauney(landmarks1, img1):
-        t2 = tuple(map(lambda p: points_map[p], t1))    # XXX: sometimes, t1's points may not be in points_map
-        warp_triangle(t1, t2, img_array1, img_array2, alpha=alpha)
+        t2 = tuple(points_map[p] for p in t1 if p in points_map)
+        if len(t2) == 3:
+            warp_triangle(t1, t2, img_array1, img_array2, alpha=alpha)
 
     return img_array2
 
@@ -173,8 +174,11 @@ def face_morph_video(filename, img1, img2, landmarks1=None, landmarks2=None):
         
         # Warp each triangle in img1 to its corresponding one in img2
         for t1 in triangles1:
-            t2 = tuple(map(lambda p: points_map[p], t1))
-            warp_triangle(t1, t2, img_array1, morphed_img, alpha=alpha)
+            t2 = tuple(points_map[p] for p in t1 if p in points_map)
+            if len(t2) == 3:
+                warp_triangle(t1, t2, img_array1, morphed_img, alpha=alpha)
+
+
         
         # save frame of morphed image to animate later
         morphed_imgs.append([plt.imshow(morphed_img, animated=True)])
