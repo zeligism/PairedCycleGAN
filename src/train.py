@@ -75,8 +75,10 @@ def parse_args():
     ### Trainer Args ###
     parser.add_argument("--results-dir", type=str, default="results/",
         help="directory where the results for each run will be saved.")
-    parser.add_argument("--load-model", type=str,
-        help="the path of the file where the model will be loaded and experiments will be saved.")
+    parser.add_argument("--pretrained-model-path", type=str,
+        help="the path of the pretrained part (e.g. makeup remover) of the model.")
+    parser.add_argument("--model-path", type=str,
+        help="the path of the model to be loaded (e.g. MakeupGAN).")
     
     parser.add_argument("--num-gpu", type=nonnegative(int), default=0,
         help="number of GPUs to use, if any.")
@@ -120,7 +122,7 @@ def parse_args():
         help="the interval in which the progress of the generator will be checked and recorded.")
 
     ### Trainer.run() ###
-    parser.add_argument("-p", "--pretrain-epochs", type=positive(int), default=5,
+    parser.add_argument("-p", "--pretrain-epochs", type=positive(int), default=0,
         help="number of training epochs (i.e. full runs on the dataset).")
     parser.add_argument("-n", "--num-epochs", type=positive(int), default=5,
         help="number of training epochs (i.e. full runs on the dataset).")
@@ -196,7 +198,6 @@ def get_trainer_args(args):
     """
     trainer_args = {
         "results_dir": args.results_dir,
-        "load_model_path": args.load_model,
         "num_gpu": args.num_gpu,
         "num_workers": args.num_workers,
         "batch_size": args.batch_size,
@@ -299,8 +300,8 @@ def main(args):
         **dataset_args, transform=transform, reverse=True, paired=False
     )
     makeup_remover = MaskCycleGAN(**model_args)
-    subtrainer = CycleGANTrainer(makeup_remover, makeup_remover_dataset,
-                                  name="makeupgan.remover", **trainer_args)
+    subtrainer = CycleGANTrainer(makeup_remover, makeup_remover_dataset, name="makeupgan.remover",
+                                 load_model_path=args.pretrained_model_path, **trainer_args)
     subtrainer.run(num_epochs=args.pretrain_epochs, save_results=args.save_results)
 
     # Train PairedCycleGAN, and assign to it the pre-trained makeup remover
@@ -310,8 +311,8 @@ def main(args):
     )
     makeup_pcgan = PairedCycleGAN(**model_args)
     makeup_pcgan.remover = makeup_remover.applier  # "applying the makeup removing"
-    trainer = PairedCycleGANTrainer(makeup_pcgan, makeup_dataset,
-                                     name="makeupgan", **trainer_args)
+    trainer = PairedCycleGANTrainer(makeup_pcgan, makeup_dataset, name="makeupgan",
+                                     load_model_path=args.model_path, **trainer_args)
     trainer.run(num_epochs=args.num_epochs, save_results=args.save_results)
 
 
