@@ -4,7 +4,7 @@ makeup:
     dataset_dir: "dataset/data/processing/faces"
 
   model:
-    num_features: 64
+    num_features: 32
     image_channels: 3
     image_size: 256
     gan_type: gan
