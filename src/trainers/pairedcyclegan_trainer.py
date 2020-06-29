@@ -309,12 +309,10 @@ class PairedCycleGANTrainer(BaseTrainer):
         """
         super().post_train_step()
 
-        """
         if self.iters in (700, 1400):
             self.constants["identity-robustness"] *= 2
             self.constants["style-robustness"] *= 2
             self.constants["mask-sparsity"] *= 2
-        """
 
         should_generate_grid = self.iters % self.generate_grid_interval == 0
 

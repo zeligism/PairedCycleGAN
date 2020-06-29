@@ -122,9 +122,9 @@ def parse_args():
         help="the interval in which the progress of the generator will be checked and recorded.")
 
     ### Trainer.run() ###
-    parser.add_argument("-p", "--pretrain-epochs", type=positive(int), default=0,
+    parser.add_argument("-p", "--pretrain-epochs", type=nonnegative(int), default=0,
         help="number of training epochs (i.e. full runs on the dataset).")
-    parser.add_argument("-n", "--num-epochs", type=positive(int), default=5,
+    parser.add_argument("-n", "--num-epochs", type=nonnegative(int), default=5,
         help="number of training epochs (i.e. full runs on the dataset).")
     parser.add_argument("-s", "--save-results", action="store_true",
         help="save the results of the experiment.")
