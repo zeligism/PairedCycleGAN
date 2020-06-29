@@ -113,7 +113,7 @@ def warp_triangle(t1, t2, img1, img2, alpha=0.8):
 
 
 
-def face_morph(img1, img2, landmarks1=None, landmarks2=None, alpha=0.95):
+def face_morph(img1, img2, landmarks1=None, landmarks2=None, alpha=0.9, adjust_tone=True):
     """
     Morph face in img1 to face in img2 by a factor of alpha, given their landmarks.
 
@@ -123,10 +123,16 @@ def face_morph(img1, img2, landmarks1=None, landmarks2=None, alpha=0.95):
         landmarks1: List of landmarks points from img1.
         landmarks2: List of landmarks points from img2.
         alpha: Factor of interpolation from face in img1 to face in img2.
+        adjust_tone: adjust the morphed face to the skin tone of the target face.
     """
 
     # Convert PIL images to np arrays
     img_array1, img_array2 = np.array(img1), np.array(img2)
+
+    # Adjust skin tone
+    if adjust_tone:
+        img_array1 = img_array1 * np.mean(img_array2) / np.mean(img_array1)
+        img_array1 = img_array1.round().clip(0, 255).astype(np.uint8)
 
     # Find landmarks if none were given
     if landmarks1 is None: landmarks1 = find_landmarks(img1)
@@ -144,10 +150,19 @@ def face_morph(img1, img2, landmarks1=None, landmarks2=None, alpha=0.95):
     return img_array2
 
 
-def face_morph_video(filename, img1, img2, landmarks1=None, landmarks2=None):
+def face_morph_video(filename, img1, img2, landmarks1=None, landmarks2=None, adjust_tone=True):
 
     # Convert PIL images to np arrays
     img_array1, img_array2 = np.array(img1), np.array(img2)
+
+    # Adjust skin tone
+    if adjust_tone:
+        img_array1 = img_array1 * np.mean(img_array2) / np.mean(img_array1)
+        img_array1 = img_array1.round().clip(0, 255).astype(np.uint8)
+
+    plt.figure()
+    plt.imshow(img_array1)
+    plt.show()
 
     # Find landmarks if none were given
     if landmarks1 is None: landmarks1 = find_landmarks(img1)
