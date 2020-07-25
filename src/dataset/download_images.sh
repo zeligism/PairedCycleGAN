@@ -6,7 +6,8 @@
 DOWNLOAD_DIR="downloaded_images"
 echo "Downloading images in $1"
 cat "$1" | parallel --gnu "wget {} -P ${DOWNLOAD_DIR}/"
-echo "Done.\n"
+echo "Done."
+echo ""
 
 # Rename
 index=1
