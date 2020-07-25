@@ -87,7 +87,7 @@ def extract_face(file_name, source_dir, dest_dir):
     return face_image_name
 
 
-def extract_faces(source_dir, faces_dir, with_landmarks=True):
+def extract_faces(source_dir, faces_dir, with_landmarks=True, ensure_pairs=True):
     """
     Try to extract faces from the images in source_dir and save them to faces_dir.
 
@@ -95,6 +95,7 @@ def extract_faces(source_dir, faces_dir, with_landmarks=True):
         source_dir: Directory of source images.
         faces_dir: Directory where face images will be saved.
         with_landmarks: Extract faces landmarks as well
+        ensure_pairs: Ensure only paired images by removing unpaired ones.
     """
 
     landmarks_dir = os.path.join(faces_dir, "landmarks")
@@ -119,11 +120,11 @@ def extract_faces(source_dir, faces_dir, with_landmarks=True):
             print("Failed."); print(f"  {str(e)}")
 
     # Delete useless files
-    clean_faces(faces_dir)
+    if ensure_pairs: clean_incomplete_face_pairs(faces_dir)
     if with_landmarks: clean_landmarks(faces_dir, landmarks_dir)
 
 
-def clean_faces(faces_dir):
+def clean_incomplete_face_pairs(faces_dir):
     """
     Clean incomplete face pairs (either before or after image is missing)
 
@@ -235,7 +236,10 @@ def clean_landmarks(faces_dir, landmarks_dir):
 
 
 def main(args):
-    extract_faces(args.source_dir, args.dest_dir, args.with_landmarks)
+    if args.image:
+        extract_face(args.image, args.source_dir, args.dest_dir)
+    else:
+        extract_faces(args.source_dir, args.dest_dir, args.with_landmarks, args.ensure_pairs)
 
 
 if __name__ == '__main__':
@@ -246,8 +250,12 @@ if __name__ == '__main__':
         help="source directory of images from which faces will be extracted.")
     parser.add_argument('--dest_dir', type=str, default=DEST_DIR,
         help="destination directory where face images will be saved.")
+    parser.add_argument('-i', '--image', type=str, default="",
+        help="path to the image, relative to --source_dir (if specified, only this image will be processed).")
     parser.add_argument("--with_landmarks", action="store_true",
         help="extract faces landmarks as well")
+    parser.add_argument("--ensure_pairs", action="store_true",
+        help="ensure only paired images (remove images with no corresponding paired image)")
     
     args = parser.parse_args()
 

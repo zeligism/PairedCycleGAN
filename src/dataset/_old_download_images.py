@@ -2,23 +2,22 @@
 import time
 import requests
 import os
+import argparse
 
-# The file where image_urls will be exported to
-DATASET_DIR = os.path.join("data", "downloaded")
+# The file where image_urls were exported to
+DOWNLOAD_DIR = os.path.join("data", "downloaded")
 IMAGE_URLS = os.path.join("search", "image_urls.csv")
 
 # Get absolute path of this file and force relative-to-file paths
 FILE_DIR = os.path.dirname(os.path.realpath(__file__))
-DATASET_DIR = os.path.join(FILE_DIR, DATASET_DIR)
+DOWNLOAD_DIR = os.path.join(FILE_DIR, DOWNLOAD_DIR)
 IMAGE_URLS = os.path.join(FILE_DIR, IMAGE_URLS)
-
-# Create dataset directory if it doesn't exist
-if not os.path.isdir(DATASET_DIR): os.mkdir(DATASET_DIR)
 
 # Variables to deal with errors occuring during download
 TRY_AGAIN = False  # retry previously failed requests (for a second run of download.py)
 ERROR_TAG = b"(error)"  # The error tag is always prepended to an error file
 IS_ERROR_FILE = lambda f: f.read()[:len(ERROR_TAG)] == ERROR_TAG
+IMAGE_NAME_FORMAT = lambda index: "{:05d}".format(index)  # The format of image names
 
 
 def download_image(image_url, image_path="untitled"):
@@ -49,21 +48,21 @@ def download_image(image_url, image_path="untitled"):
         return e
 
 
-def download_images(image_urls, dataset_dir=DATASET_DIR):
+def download_images(image_urls, download_dir):
     """
-    Download the images from `image_urls` and save them in `dataset_dir`.
+    Download the images from `image_urls` and save them in `download_dir`.
 
     Args:
         image_urls: The urls of the images to be downloaded.
-        dataset_dir: The directory where the images will be saved.
+        download_dir: The directory where the images will be saved.
     """
 
     # Download images
     for index, image_url in enumerate(image_urls):
 
         # Create image name and path
-        image_name = "{:05d}".format(index)
-        image_path = os.path.join(dataset_dir, image_name)
+        image_name = IMAGE_NAME_FORMAT(index)
+        image_path = os.path.join(download_dir, image_name)
 
         # If a file called 'image_name' already exists, open it and find whether
         # it has an '(error)' tag in it. If it doesn't, then we already downloaded
@@ -82,46 +81,68 @@ def download_images(image_urls, dataset_dir=DATASET_DIR):
         print(status)
 
 
-def delete_error_files(num_image_urls, dataset_dir=DATASET_DIR):
+def delete_error_files(download_dir):
     """
     Delete error files, i.e. images that failed to download.
 
     Args:
-        num_image_urls: The total number of image urls.
-        dataset_dir: The directory where the images are saved.
+        download_dir: The directory where the images are saved.
     """
     
     num_errors_files = 0
+    index = 0
+    notexist_tally = 0
 
-    for index in range(num_image_urls):
-        
+    while notexist_tally < 10:  # XXX: bad heuristic check
         # Create image name and path
-        image_name = "{:05d}".format(index)
-        image_path = os.path.join(dataset_dir, image_name)
+        image_name = IMAGE_NAME_FORMAT(index)
+        image_path = os.path.join(download_dir, image_name)
 
         # Delete error file, if any
         if os.path.exists(image_path):
+            notexist_tally = 0
             with open(image_path, "rb") as image:
                 if IS_ERROR_FILE(image):
                     print("Removing %s" % image_name)
                     os.remove(image_path)
                     num_errors_files += 1
+        else:
+            notexist_tally += 1
+
+        index += 1
 
     print("Deleted %d error files." % num_errors_files)
     return num_errors_files
 
 
-def main():
+def main(args):
 
     start_time = time.time()
 
+    # Create dataset directory if it doesn't exist
+    if not os.path.isdir(args.download_dir):
+        os.mkdir(args.download_dir)
+
     # Download images
-    with open(IMAGE_URLS, "r") as image_urls:
-        download_images(image_url.rstrip() for image_url in image_urls)
+    with open(args.image_urls, "r") as f:
+        image_urls = (line.rstrip() for line in f)
+        download_images(image_urls, args.download_dir)
+
+    delete_error_files(args.download_dir)
 
     print("Time elapsed = {:.3f}".format(time.time() - start_time))
 
 
 if __name__ == '__main__':
-    main()
+
+    parser = argparse.ArgumentParser(description="Download images from a file of image urls.")
+    
+    parser.add_argument("-o", "--download_dir", type=str, default=DOWNLOAD_DIR,
+        help="the directory where the images will be downloaded.")
+    parser.add_argument("-i", "--image_urls", type=str, default=IMAGE_URLS,
+        help="the output file where the urls of the images are saved.")
+    
+    args = parser.parse_args()
+
+    main(args)
 
