@@ -1,15 +1,42 @@
 
-import pickle
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 
+from math import pi, atan2
 from PIL import Image, ImageDraw
 from face_recognition import face_landmarks
 
-
 dict_to_list = lambda d: [x for l in d.values() for x in l]
+
+
+def get_face_mask(img_array, landmarks):
+    # Get the convex hull containing face landmarks
+    hull = cv2.convexHull(np.array(landmarks)).squeeze()
+
+    # Draw the contours on the mask (thickness -1 fills the inside of the contours)
+    mask = np.zeros((img_array.shape[0], img_array.shape[1]), dtype=np.uint8)
+    cv2.drawContours(mask, [hull], 0, color=(255, 255, 255), thickness=-1)
+
+    # Apply the mask to the face to get the face only
+    mask = mask.reshape(mask.shape + (1,))
+    face_mask = (mask > 0) * img_array
+
+    return face_mask
+
+def get_face_tone(img_array, landmarks=None):
+    if landmarks:
+        img_array = get_face_mask(img_array, landmarks)
+    return np.mean(img_array, axis=(0,1)).reshape(1,1,-1)
+
+def adjust_face_tone(img_array1, img_array2, landmarks1=None, landmarks2=None):
+    face_tone1 = get_face_tone(img_array1, landmarks1)
+    face_tone2 = get_face_tone(img_array2, landmarks2)
+    img_array1 = img_array1 * face_tone2 / face_tone1
+    img_array1 = img_array1.round().clip(0, 255).astype(np.uint8)
+
+    return img_array1
 
 def delauney(points, img, draw=False):
     """
@@ -20,7 +47,6 @@ def delauney(points, img, draw=False):
         points: A list of 2D points as tuples.
         img: The image of containing the points as a PIL or numpy.
         draw: Draw the triangulation on the img if True.
-        
     """
     
     # Init subdiv and insert points
@@ -43,6 +69,9 @@ def delauney(points, img, draw=False):
         p2 = (t[2], t[3])
         p3 = (t[4], t[5])
         t = tuple(sorted([p1, p2, p3]))
+        # Sort the rest of the points in clockwise order XXX: overkill?
+        # angle = lambda p: (-0.5*pi-atan2(p[1] - t[0][1], p[0] - t[0][0])) % (2*pi)
+        # t = tuple([t[0]] + sorted(t[1:], key=angle))
         triangles.append(t)
 
     return sorted(triangles)
@@ -129,14 +158,13 @@ def face_morph(img1, img2, landmarks1=None, landmarks2=None, alpha=0.9, adjust_t
     # Convert PIL images to np arrays
     img_array1, img_array2 = np.array(img1), np.array(img2)
 
-    # Adjust skin tone
-    if adjust_tone:
-        img_array1 = img_array1 * np.mean(img_array2) / np.mean(img_array1)
-        img_array1 = img_array1.round().clip(0, 255).astype(np.uint8)
-
     # Find landmarks if none were given
     if landmarks1 is None: landmarks1 = find_landmarks(img1)
     if landmarks2 is None: landmarks2 = find_landmarks(img2)
+
+    # Adjust skin tone
+    if adjust_tone:
+        img_array1 = adjust_face_tone(img_array1, img_array2)
 
     # Create a map that links the vertices of the two landmarks together
     points_map = dict(zip(landmarks1, landmarks2))
@@ -155,18 +183,13 @@ def face_morph_video(filename, img1, img2, landmarks1=None, landmarks2=None, adj
     # Convert PIL images to np arrays
     img_array1, img_array2 = np.array(img1), np.array(img2)
 
-    # Adjust skin tone
-    if adjust_tone:
-        img_array1 = img_array1 * np.mean(img_array2) / np.mean(img_array1)
-        img_array1 = img_array1.round().clip(0, 255).astype(np.uint8)
-
-    plt.figure()
-    plt.imshow(img_array1)
-    plt.show()
-
     # Find landmarks if none were given
     if landmarks1 is None: landmarks1 = find_landmarks(img1)
     if landmarks2 is None: landmarks2 = find_landmarks(img2)
+
+    # Adjust skin tone
+    if adjust_tone:
+        img_array1 = adjust_face_tone(img_array1, img_array2)
 
     # Create a map that links the vertices of the two landmarks together
     points_map = dict(zip(landmarks1, landmarks2))
@@ -214,37 +237,23 @@ def find_landmarks(img):
 
 #############################################
 
-def test(test_num, reverse=False, load_landmarks=False):
+def test(test_num, reverse=False):
 
     # Just a test
     img1_name = f"img/{test_num}-before.jpeg"
     img2_name = f"img/{test_num}-after.jpeg"
-    landmarks1_name = f"img/landmarks/{test_num}-before.pickle"
-    landmarks2_name = f"img/landmarks/{test_num}-after.pickle"
 
     # Reverse morph direction (morph 2 -> 1 instead of 1 -> 2)
     if reverse:
         img1_name, img2_name = img2_name, img1_name
-        landmarks1_name, landmarks2_name = landmarks2_name, landmarks1_name
-        test_num += "_apply"
-    else:
-        test_num += "_remove"
-
 
     # Load images
     img1 = Image.open(img1_name)
     img2 = Image.open(img2_name)
 
-    if load_landmarks:
-        # Load landmarks
-        with open(landmarks1_name, "rb") as f:
-            landmarks1 = dict_to_list(pickle.load(f))
-        with open(landmarks2_name, "rb") as f:
-            landmarks2 = dict_to_list(pickle.load(f))
-    else:
-        # Extract landmarks
-        landmarks1 = find_landmarks(img1)
-        landmarks2 = find_landmarks(img2)
+    # Extract landmarks
+    landmarks1 = find_landmarks(img1)
+    landmarks2 = find_landmarks(img2)
 
     # Morph face
     makeup_process = "apply" if reverse else "remove"
@@ -254,9 +263,13 @@ def test(test_num, reverse=False, load_landmarks=False):
 
 def main():
     test("00000")
-    test("00000", reverse=True, load_landmarks=True)
+    test("00003")
+    test("mixed1")
+    test("mixed2")
+    test("00000", reverse=True)
     test("00003", reverse=True)
-    test("00003", load_landmarks=True)
+    test("mixed1", reverse=True)
+    test("mixed2", reverse=True)
 
 
 if __name__ == '__main__':
