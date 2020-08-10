@@ -67,7 +67,7 @@ def extract_face(file_name, source_dir, dest_dir):
     Returns:
         The name of the face image.
     """
-
+    print("Extracting face from {}... ".format(file_name), end="")
     face_image_name = file_name
 
     # Check if destination image already exists (i.e. processed previously)
@@ -84,6 +84,7 @@ def extract_face(file_name, source_dir, dest_dir):
         # Crop image and save as PIL
         face_img.save(face_image_path)
 
+    print("Done.")
     return face_image_name
 
 
@@ -107,14 +108,11 @@ def extract_faces(source_dir, faces_dir, with_landmarks=True, ensure_pairs=True)
     for file_name in files_iter(source_dir):
         # Try to extract face from file (image)
         try:
-            print("Extracting face from {}... ".format(file_name), end="")
             face_image_name = extract_face(file_name, source_dir, faces_dir)
             
             # Extract landmarks if needed
             if with_landmarks:
                 extract_landmarks(face_image_name, faces_dir, landmarks_dir)
-            
-            print("Done.")
 
         except Exception as e:
             print("Failed."); print(f"  {str(e)}")
