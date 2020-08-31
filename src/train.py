@@ -7,7 +7,7 @@ import numpy as np
 import torch
 import torchvision.transforms as transforms
 
-from dataset.dataset import MakeupDataset
+from dataset.dataset import MakeupDataset, MakeupDataset2
 from dataset.transforms import MakeupSampleTransform
 
 from models.cyclegan import MaskCycleGAN
@@ -296,9 +296,10 @@ def main(args):
 
 
     # Train makeup remover using CycleGAN
-    makeup_remover_dataset = MakeupDataset(
-        **dataset_args, transform=transform, reverse=True, paired=False
-    )
+    # makeup_remover_dataset = MakeupDataset(
+    #     **dataset_args, transform=transform, reverse=True, paired=False
+    # )
+    makeup_remover_dataset = MakeupDataset2(**dataset_args, transform=transform)
     makeup_remover = MaskCycleGAN(**model_args)
     subtrainer = CycleGANTrainer(makeup_remover, makeup_remover_dataset, name="makeupgan.remover",
                                  load_model_path=args.pretrained_model_path, **trainer_args)
@@ -306,9 +307,10 @@ def main(args):
 
     # Train PairedCycleGAN, and assign to it the pre-trained makeup remover
     # XXX: to pair or not to pair
-    makeup_dataset = MakeupDataset(
-        **dataset_args, transform=transform, with_landmarks=True, paired=True
-    )
+    # makeup_dataset = MakeupDataset(
+    #     **dataset_args, transform=transform, with_landmarks=True, paired=True
+    # )
+    makeup_dataset = MakeupDataset2(**dataset_args, transform=transform, with_landmarks=True)
     makeup_pcgan = PairedCycleGAN(**model_args)
     makeup_pcgan.remover = makeup_remover.applier  # "applying the makeup removing"
     trainer = PairedCycleGANTrainer(makeup_pcgan, makeup_dataset, name="makeupgan",

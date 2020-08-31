@@ -110,10 +110,10 @@ def get_D_grad_norm(discriminator, real, fake):
     return D_grad_norm
 
 
-def get_grad_penalty(grad_norm, gp_coeff=10.):
+def get_grad_penalty(grad_norm, gp_coeff=10., center=1.):
 
     # D's gradient penalty is `gp_coeff * (|| grad of D(x_i) wrt x_i || - 1)^2`
-    grad_penalty = (grad_norm - 1).pow(2) * gp_coeff
+    grad_penalty = (grad_norm - center).pow(2) * gp_coeff
 
     return grad_penalty
 
