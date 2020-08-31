@@ -4,11 +4,17 @@ import torch
 import torch.utils.data as data_utils
 
 import random
+import glob
 from PIL import Image
 from face_recognition import face_landmarks
-from .data.utility import files_iter
 
-dict_to_list = lambda d: [x for l in d.values() for x in l]
+
+def dict_to_list(d):
+    return [x for l in d.values() for x in l]
+
+
+def files_iter(directory):
+    return filter(os.path.isfile, glob.iglob(os.path.join(directory, "*")))
 
 
 class MakeupDataset(data_utils.Dataset):
@@ -29,13 +35,9 @@ class MakeupDataset(data_utils.Dataset):
             paired: Indicates whether images should be paired when sampled or not.
             reverse: Reverses sample if True (before = with makeup, after = no makeup).
         """
-
-        if not os.path.isdir(dataset_dir):
-            raise FileNotFoundError(f"Dataset directory '{dataset_dir}' does not exist.")
-
         self.dataset_dir = dataset_dir
-        self.with_landmarks = with_landmarks
         self.transform = transform
+        self.with_landmarks = with_landmarks
         self.paired = paired
         self.reverse = reverse
 
@@ -51,6 +53,8 @@ class MakeupDataset(data_utils.Dataset):
         Returns:
             A list of tuples of the names of before and after makeup images in `dataset_dir`.
         """
+        if not os.path.isdir(self.dataset_dir):
+            raise FileNotFoundError(f"Dataset directory '{self.dataset_dir}' does not exist.")
 
         all_images = list(files_iter(self.dataset_dir))
         before_images = list(filter(lambda s: s.find("before") != -1, all_images))
@@ -83,14 +87,10 @@ class MakeupDataset(data_utils.Dataset):
         image_before = self.images_before[index]
         image_after = self.images_after[index]
 
-        # Get path of before and after images
-        path_before = os.path.join(self.dataset_dir, image_before)
-        path_after  = os.path.join(self.dataset_dir, image_after)
-
         # Create sample
         sample = {
-            "before": Image.open(path_before).convert("RGB"),
-            "after":  Image.open(path_after).convert("RGB"),
+            "before": Image.open(image_before).convert("RGB"),
+            "after":  Image.open(image_after).convert("RGB"),
         }
 
         # Apply transformations on images
@@ -187,5 +187,38 @@ class MakeupDataset(data_utils.Dataset):
 
     def __repr__(self):
         return "{}({!r})".format(self.__class__.__name__, self.dataset_dir)
+
+
+
+class MakeupDataset2(MakeupDataset):
+    """A new, expanded, unpaired version of MakeupDataset."""
+
+    def __init__(self, dataset_dir,
+                 transform=None,
+                 with_landmarks=False,
+                 reverse=False):
+        # Initialize as an unpaired MakeupDataset
+        super().__init__(dataset_dir, transform=transform,
+            with_landmarks=with_landmarks, paired=False, reverse=reverse)
+
+    def get_images(self):
+        """
+        Return a list of pairs of (before, after) makeup images name in `dataset_dir`.
+
+        Returns:
+            A list of tuples of the names of before and after makeup images in `dataset_dir`.
+        """
+        nomakeup_dir = os.path.join(self.dataset_dir, "nomakeup")
+        makeup_dir = os.path.join(self.dataset_dir, "makeup")
+
+        if not os.path.isdir(nomakeup_dir):
+            raise FileNotFoundError(f"No-Makeup directory '{nomakeup_dir}' does not exist.")
+        if not os.path.isdir(makeup_dir):
+            raise FileNotFoundError(f"Makeup directory '{makeup_dir}' does not exist.")
+
+        before_images = list(files_iter(nomakeup_dir))
+        after_images = list(files_iter(makeup_dir))
+
+        return sorted(before_images), sorted(after_images)
 
 
