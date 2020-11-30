@@ -1,5 +1,5 @@
 # I'm kinda embarrassed that the following shell script employing wget and
-# parallel blows my _old_download_images.py out of the water.
+# parallel blows my download_images.py out of the water.
 # Not sure why I even thought that writing that python script would be a good idea.
 
 # Download
