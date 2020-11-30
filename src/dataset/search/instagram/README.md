@@ -8,7 +8,7 @@ Assuming the folder "hashtags" contains no feeds (if so, move them into a separa
     python __init__.py -u <USER> -p <PASSWORD> -f hashtag_files/<query>.txt
     mkdir hashtags/<query> && mv hashtags/*.json hashtags/<query>
 ```
-where <query> could be either 'makeup' or 'nomakeup'.
+where `<query>` could be either 'makeup' or 'nomakeup'.
 
 Now we go back and simply extract the urls from these rawfeeds (note that I edited the crawler in instagram-hastag-crawler to simply stop after getting the rawfeed without beautifying). The argument --hashtag-dir is "third_party/instagram-hashtag-crawler/hashtags" by default, change it as necessary. The command is:
 ```
