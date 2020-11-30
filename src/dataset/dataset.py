@@ -35,9 +35,13 @@ class MakeupDataset(data_utils.Dataset):
             paired: Indicates whether images should be paired when sampled or not.
             reverse: Reverses sample if True (before = with makeup, after = no makeup).
         """
+
+        if not os.path.isdir(dataset_dir):
+            raise FileNotFoundError(f"Dataset directory '{dataset_dir}' does not exist.")
+
         self.dataset_dir = dataset_dir
-        self.transform = transform
         self.with_landmarks = with_landmarks
+        self.transform = transform
         self.paired = paired
         self.reverse = reverse
 
@@ -53,8 +57,6 @@ class MakeupDataset(data_utils.Dataset):
         Returns:
             A list of tuples of the names of before and after makeup images in `dataset_dir`.
         """
-        if not os.path.isdir(self.dataset_dir):
-            raise FileNotFoundError(f"Dataset directory '{self.dataset_dir}' does not exist.")
 
         all_images = list(files_iter(self.dataset_dir))
         before_images = list(filter(lambda s: s.find("before") != -1, all_images))
@@ -65,7 +67,7 @@ class MakeupDataset(data_utils.Dataset):
 
     def __len__(self):
         """Returns the length of the dataset."""
-        return len(self.images_before)
+        return min(len(self.images_before), len(self.images_after))
 
 
     def __getitem__(self, index):
@@ -87,10 +89,14 @@ class MakeupDataset(data_utils.Dataset):
         image_before = self.images_before[index]
         image_after = self.images_after[index]
 
+        # Get path of before and after images
+        path_before = image_before #os.path.join(self.dataset_dir, image_before)
+        path_after  = image_after #os.path.join(self.dataset_dir, image_after)
+
         # Create sample
         sample = {
-            "before": Image.open(image_before).convert("RGB"),
-            "after":  Image.open(image_after).convert("RGB"),
+            "before": Image.open(path_before).convert("RGB"),
+            "after":  Image.open(path_after).convert("RGB"),
         }
 
         # Apply transformations on images
@@ -187,7 +193,6 @@ class MakeupDataset(data_utils.Dataset):
 
     def __repr__(self):
         return "{}({!r})".format(self.__class__.__name__, self.dataset_dir)
-
 
 
 class MakeupDataset2(MakeupDataset):

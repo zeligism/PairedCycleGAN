@@ -11,6 +11,8 @@ class PairedCycleGAN(nn.Module):
                  image_channels=3,
                  image_size=64,
                  gan_type="gan",
+                 custom_remover=None,
+                 custom_applier=None,
                  **kwargs):
         super().__init__()
 
@@ -26,8 +28,8 @@ class PairedCycleGAN(nn.Module):
             "gan_type": gan_type,
         }
 
-        self.remover = MaskGAN(**model_config)
-        self.applier = MaskGAN(**model_config, with_reference=True)
+        self.remover = custom_remover or MaskGAN(**model_config)
+        self.applier = custom_applier or MaskGAN(**model_config, with_reference=True)
         self.style_D = StyleDiscriminator(**model_config)
 
 
@@ -36,5 +38,4 @@ class StyleDiscriminator(DCGAN_Discriminator):
 
         kwargs["image_channels"] *= 2  # XXX: extract features from img first?
         super().__init__(*args, **kwargs)
-
 

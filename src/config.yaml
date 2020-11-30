@@ -1,19 +1,20 @@
 ####################################
 makeup:
   dataset:
-    dataset_dir: "dataset/data/processing/faces"
+    dataset_dir: "dataset/data/instagram"
 
   model:
-    num_features: 32
+    num_features: 7
     image_channels: 3
-    image_size: 256
+    image_size: 128
     gan_type: gan
 
   trainer:
     num_gpu: 1
-    num_workers: 8
+    num_workers: 32
+    results_dir: "results/"
 
-    batch_size: 8
+    batch_size: 128
 
     D_optim_config:
       optim_choice: adam
@@ -23,17 +24,60 @@ makeup:
 
     G_optim_config:
       optim_choice: adam
-      lr: 2.0e-4
+      lr: 1.0e-4
       momentum: 0.9
       betas: [0.5, 0.9]
 
+    constants:
+      applier_adversarial: 2.
+      remover_adversarial: 2.
+      style_adversarial: 1.
+      before_identity_robustness: 2.
+      after_identity_robustness: 0.
+      style_identity_robustness: 0.
+      applier_mask_sparsity: 2.
+      remover_mask_sparsity: 0.
+      applier_D_grad_penalty: 10.
+      remover_D_grad_penalty: 10.
+      style_D_grad_penalty: 10.
+
     D_iters: 3
-    gp_coeff: 10.
 
-    report_interval: 5
-    save_interval: 500
-    generate_grid_interval: 50
+    report_interval: 10
+    generate_grid_interval: 6
 
+####################################
+makeup-test:
+  dataset:
+    dataset_dir: "dataset/data/instagram"
+
+  model:
+    num_features: 5
+    image_channels: 3
+    image_size: 32
+    gan_type: wgan-gp
+
+  trainer:
+    num_gpu: 0
+    num_workers: 4
+    results_dir: "results/"
+    batch_size: 4
+    D_iters: 1
+    report_interval: 10
+    generate_grid_interval: 10
+
+    constants:
+      applier_adversarial: 1
+      remover_adversarial: 1
+      style_adversarial: 1
+      before_identity_robustness: 1
+      after_identity_robustness: 1
+      style_identity_robustness: 1
+      applier_mask_sparsity: 1
+      remover_mask_sparsity: 1
+      applier_D_grad_penalty: 1
+      remover_D_grad_penalty: 1
+      style_D_grad_penalty: 1
 
 ####################################
 dcgan:
@@ -75,7 +119,6 @@ dcgan:
     report_interval: 50
     generate_grid_interval: 200
 
-
 ####################################
 wgan:
   dataset:
@@ -116,7 +159,6 @@ wgan:
     report_interval: 50
     generate_grid_interval: 200
 
-
 ####################################
 wgan-gp:
   dataset:
@@ -156,6 +198,4 @@ wgan-gp:
 
     report_interval: 50
     generate_grid_interval: 200
-
-
 

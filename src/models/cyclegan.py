@@ -14,6 +14,9 @@ class CycleGAN(nn.Module):
                  **kwargs):
         super().__init__()
 
+        self.num_features = num_features
+        self.image_channels = image_channels
+        self.image_size = image_size
         self.gan_type = gan_type
 
         model_config = {
@@ -37,6 +40,10 @@ class MaskCycleGAN(nn.Module):
                  **kwargs):
         super().__init__()
 
+
+        self.num_features = num_features
+        self.image_channels = image_channels
+        self.image_size = image_size
         self.gan_type = gan_type
 
         model_config = {
@@ -49,5 +56,4 @@ class MaskCycleGAN(nn.Module):
 
         self.applier = MaskGAN(**model_config)
         self.remover = MaskGAN(**model_config)
-
 

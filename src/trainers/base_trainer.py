@@ -323,4 +323,3 @@ class BaseTrainer:
         
         return self.__class__.__name__ + "(**" + pretty_dict + ")"
 
-

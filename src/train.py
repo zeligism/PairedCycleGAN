@@ -266,7 +266,7 @@ def make_transform(image_size):
     """
     transform_sequence = [
         transforms.Resize((image_size, image_size)),
-        transforms.ColorJitter(brightness=0.01),
+        transforms.RandomAffine(degrees=(-3, 3)),
         transforms.RandomHorizontalFlip(),
         transforms.ToTensor(),
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
@@ -294,27 +294,20 @@ def main(args):
     transform = make_transform(model_args["image_size"])
     weights_init = create_weights_init()
 
-
     # Train makeup remover using CycleGAN
-    # makeup_remover_dataset = MakeupDataset(
-    #     **dataset_args, transform=transform, reverse=True, paired=False
-    # )
-    makeup_remover_dataset = MakeupDataset2(**dataset_args, transform=transform)
-    makeup_remover = MaskCycleGAN(**model_args)
-    subtrainer = CycleGANTrainer(makeup_remover, makeup_remover_dataset, name="makeupgan.remover",
-                                 load_model_path=args.pretrained_model_path, **trainer_args)
+    makeup_gan_dataset = MakeupDataset2(**dataset_args, transform=transform)
+    makeup_gan = MaskCycleGAN(**model_args)
+    subtrainer = CycleGANTrainer(makeup_gan, makeup_gan_dataset,
+                                 load_model_path=args.pretrained_model_path,
+                                 name="makeup_gan", **trainer_args)
     subtrainer.run(num_epochs=args.pretrain_epochs, save_results=args.save_results)
 
     # Train PairedCycleGAN, and assign to it the pre-trained makeup remover
-    # XXX: to pair or not to pair
-    # makeup_dataset = MakeupDataset(
-    #     **dataset_args, transform=transform, with_landmarks=True, paired=True
-    # )
-    makeup_dataset = MakeupDataset2(**dataset_args, transform=transform, with_landmarks=True)
-    makeup_pcgan = PairedCycleGAN(**model_args)
-    makeup_pcgan.remover = makeup_remover.applier  # "applying the makeup removing"
-    trainer = PairedCycleGANTrainer(makeup_pcgan, makeup_dataset, name="makeupgan",
-                                     load_model_path=args.model_path, **trainer_args)
+    makeup_pcgan_dataset = MakeupDataset2(**dataset_args, transform=transform, with_landmarks=True)
+    makeup_pcgan = PairedCycleGAN(**model_args, custom_remover=makeup_gan.remover)
+    trainer = PairedCycleGANTrainer(makeup_pcgan, makeup_pcgan_dataset,
+                                    load_model_path=args.model_path,
+                                    name="makeup_pcgan", **trainer_args)
     trainer.run(num_epochs=args.num_epochs, save_results=args.save_results)
 
 

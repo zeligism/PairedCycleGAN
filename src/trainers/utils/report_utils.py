@@ -68,11 +68,10 @@ def generate_grid(generator, latent):
     return image_grid
 
 
-def generate_applier_grid(applier, before):
+def generate_G_grid(generator, before):
     """
     Generate a grid of pairs of images, where each pair shows a before-after
-    transition when applying the `applier` (which is a makeup remover in our
-    case) to the given faces.
+    transition when applying G on before.
     """
 
     if len(before.size()) == 3:
@@ -82,11 +81,11 @@ def generate_applier_grid(applier, before):
     img_dim = before.size()[1:]
 
     with torch.no_grad():
-        fake_after = applier(before)
+        after = generator(before)
 
     row = torch.zeros([2 * batch_size, *img_dim])
     row[0::2] = before.detach()
-    row[1::2] = fake_after.detach()
+    row[1::2] = after.detach()
 
     image_grid = vutils.make_grid(row.cpu(), nrow=8, padding=2, normalize=True, range=(-1,1))
 
@@ -125,7 +124,4 @@ def generate_makeup_grid(applier_ref, remover, before, after_ref):
     image_grid = vutils.make_grid(row.cpu(), nrow=8, padding=2, normalize=True, range=(-1,1))
 
     return image_grid
-
-
-
 

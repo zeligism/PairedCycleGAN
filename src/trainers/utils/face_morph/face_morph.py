@@ -141,8 +141,8 @@ def warp_triangle(t1, t2, img1, img2, alpha=0.8):
     return t1, t2, patch1, patch2, patch1_warped
 
 
-
-def face_morph(img1, img2, landmarks1=None, landmarks2=None, alpha=0.9, adjust_tone=True):
+# XXX
+def face_morph(img1, img2, landmarks1=None, landmarks2=None, alpha=0.95, adjust_tone=False):
     """
     Morph face in img1 to face in img2 by a factor of alpha, given their landmarks.
 
@@ -233,7 +233,6 @@ def find_landmarks(img):
         return dict_to_list(landmarks_found[0])
     else:
         raise Exception("Failed to find face landmarks for one of the images.")
-
 
 #############################################
 

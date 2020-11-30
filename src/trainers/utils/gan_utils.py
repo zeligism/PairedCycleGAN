@@ -3,70 +3,51 @@ import torch
 import torch.nn.functional as F
 
 
-def get_D_loss(D, real, fake, gan_type="gan", gp_coeff=10.):
-
-    # Classify real and fake images
-    D_on_real = D(real)
-    D_on_fake = D(fake)
-
-    if gan_type in ("gan", "dcgan", "ns-gan"):
-        loss = D_loss_GAN(D_on_real, D_on_fake)
-
-    elif gan_type == "wgan":
-        loss = D_loss_WGAN(D_on_real, D_on_fake)
-
-    elif gan_type == "wgan-gp":
-        D_grad_norm = get_D_grad_norm(D, real, fake)
-        grad_penalty = get_grad_penalty(D_grad_norm, gp_coeff)
-        loss = D_loss_WGAN(D_on_real, D_on_fake, grad_penalty=grad_penalty)
-
+def get_D_loss(gan_type="gan"):
+    if gan_type in ("gan", "gan-gp"):
+        return D_loss_GAN
+    elif gan_type in ("wgan", "wgan-gp"):
+        return D_loss_WGAN
     else:
         raise ValueError(f"gan_type {gan_type} not supported")
 
-    return loss
 
-
-def get_G_loss(D, fake, gan_type="gan"):
-
-    # Classify fake images
-    D_on_fake = D(fake)
-
-    if gan_type == "gan":
-        loss = G_loss_GAN(D_on_fake)
-
-    elif gan_type == "wgan" or gan_type == "wgan-gp":
-        loss = G_loss_WGAN(D_on_fake)
-
+def get_G_loss(gan_type="gan"):
+    if gan_type in ("gan", "gan-gp"):
+        return G_loss_GAN
+    elif gan_type in ("wgan", "wgan-gp"):
+        return G_loss_WGAN
     else:
         raise ValueError(f"gan_type {gan_type} not supported")
 
-    return loss
 
-
-def D_loss_GAN(D_on_real, D_on_fake):
+def D_loss_GAN(D_on_real, D_on_fake, label_smoothing=True):
     
     # Create (noisy) real and fake labels XXX
-    real_label = 0.95 + 0.05 * torch.rand_like(D_on_real)
-    fake_label = 0.05 + 0.05 * torch.rand_like(D_on_fake)
-    
+    if label_smoothing:
+        real_label = 0.7 + 0.5 * torch.rand_like(D_on_real)
+    else:
+        real_label = torch.ones_like(D_on_real) - 0.1
+    fake_label = torch.zeros_like(D_on_fake)
+
     # Calculate binary cross entropy loss
     D_loss_on_real = F.binary_cross_entropy(D_on_real, real_label)
     D_loss_on_fake = F.binary_cross_entropy(D_on_fake, fake_label)
-    
+
     # Loss is: - log(D(x)) - log(1 - D(x_g)),
     # which is equiv. to maximizing: log(D(x)) + log(1 - D(x_g))
-    D_loss = torch.mean(D_loss_on_real + D_loss_on_fake)
+    D_loss = D_loss_on_real + D_loss_on_fake
 
-    return D_loss
+    return D_loss.mean()
 
 
 def D_loss_WGAN(D_on_real, D_on_fake, grad_penalty=0.0):
 
-    # Maximize: D(x) - D(x_g) - gp_coeff * (|| grad of D(x_i) wrt x_i || - 1)^2,
+    # Maximize: D(x) - D(x_g) - const * (|| grad of D(x_i) wrt x_i || - 1)^2,
     # where x_i <- eps * x + (1 - eps) * x_g, and eps ~ rand(0,1)
-    D_loss = -1 * torch.mean(D_on_real - D_on_fake - grad_penalty)
+    D_loss = -1 * (D_on_real - D_on_fake - grad_penalty)
 
-    return D_loss
+    return D_loss.mean()
 
 
 def G_loss_GAN(D_on_fake):
@@ -78,43 +59,25 @@ def G_loss_GAN(D_on_fake):
     # We use this loss vs. the original one for stability only.
     G_loss = F.binary_cross_entropy(D_on_fake, 1 - fake_label)
 
-    return G_loss
+    return G_loss.mean()
 
 
 def G_loss_WGAN(D_on_fake):
 
     # Minimize: -D(G(z))
-    G_loss = (-D_on_fake).mean()
+    G_loss = -D_on_fake
     
-    return G_loss
+    return G_loss.mean()
 
 
-def get_D_grad_norm(discriminator, real, fake):
-
-    batch_size = real.size()[0]
-    device = real.device
-
-    # Calculate gradient penalty
-    eps = torch.rand([batch_size, 1, 1, 1], device=device)
-    interpolated = eps * real + (1 - eps) * fake
-    interpolated.requires_grad_()
-    D_on_inter = discriminator(interpolated)
-
-    # Calculate gradient of D(x_i) wrt x_i for each batch
-    D_grad = torch.autograd.grad(D_on_inter, interpolated,
-                                 torch.ones_like(D_on_inter), retain_graph=True)
-
-    # D_grad will be a 1-tuple, as in: (grad,)
-    D_grad_norm = D_grad[0].view([batch_size, -1]).norm(dim=1)
-
-    return D_grad_norm
+def random_interpolate(real, fake):
+    eps = torch.rand(real.size(0), 1, 1, 1).to(real)
+    return eps * real + (1 - eps) * fake
 
 
-def get_grad_penalty(grad_norm, gp_coeff=10., center=1.):
-
-    # D's gradient penalty is `gp_coeff * (|| grad of D(x_i) wrt x_i || - 1)^2`
-    grad_penalty = (grad_norm - center).pow(2) * gp_coeff
-
-    return grad_penalty
-
-
+def simple_gradient_penalty(D, x, center=0.):
+    x.requires_grad_()
+    D_on_x = D(x)
+    D_grad = torch.autograd.grad(D_on_x, x, torch.ones_like(D_on_x), create_graph=True)
+    D_grad_norm = D_grad[0].view(x.size(0), -1).norm(dim=1)
+    return (D_grad_norm - center).pow(2).mean()

@@ -22,7 +22,7 @@ class MaskGAN(nn.Module):
             "gan_type": gan_type,
         }
         G_params = {
-            "num_features": num_features,
+            "num_features": 3*num_features,  # XXX: due to parameters inbalance
             "with_reference": with_reference,
         }
 
@@ -80,5 +80,5 @@ class MaskGenerator(nn.Module):
 
         mask = self.mask_generator(features)
 
-        return (source + mask).clamp(-1,1) # XXX: range could go outside [-1, 1]
+        return (source + mask).clamp(-1,1) # XXX: range could go outside [-1, 1] !!!
 

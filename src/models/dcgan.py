@@ -14,7 +14,7 @@ class DCGAN(nn.Module):
                  fully_convolutional=True,
                  activation=None,
                  use_batchnorm=True,
-                 use_spectralnorm=False):
+                 use_spectralnorm=False,):
         """
         Initializes DCGAN.
 
@@ -38,7 +38,7 @@ class DCGAN(nn.Module):
         self.use_spectralnorm = use_spectralnorm
 
         D_params = {
-            "num_latents": 1,
+            "num_latents": 1,  # XXX
             "num_features": num_features,
             "image_channels": image_channels,
             "image_size": image_size,
@@ -124,8 +124,8 @@ class DCGAN_Discriminator(nn.Module):
                  num_features=64,
                  image_channels=3,
                  image_size=64,
-                 gan_type="gan",
                  max_features=512,
+                 gan_type="gan",
                  fully_convolutional=True,
                  activation=None,
                  use_batchnorm=True,
@@ -133,15 +133,13 @@ class DCGAN_Discriminator(nn.Module):
                  D_block=DCGAN_DiscriminatorBlock):
         super().__init__()
 
-        # Reset batchnorm to False if using gradient penalty
-        if use_batchnorm:
-            using_gradient_penalty = gan_type == "wgan-gp"
-            use_batchnorm = not using_gradient_penalty
+        using_grad_penalty = gan_type in ("gan-gp", "wgan-gp")
+        output_sigmoid = gan_type in ("gan", "gan-gp")
 
         block_config = {
             "activation": activation,
-            "use_batchnorm": use_batchnorm,
-            "use_spectralnorm": use_spectralnorm
+            "use_batchnorm": use_batchnorm and not using_grad_penalty,
+            "use_spectralnorm": use_spectralnorm,
         }
 
         # Calculate intermediate image sizes
@@ -176,7 +174,7 @@ class DCGAN_Discriminator(nn.Module):
             )
 
         # Add sigmoid activation if using regular GAN loss
-        self.output_activation = nn.Sigmoid() if gan_type == "gan" else None
+        self.output_activation = nn.Sigmoid() if output_sigmoid else None
 
     def forward(self, x):
         x = self.input_layer(x)
@@ -197,8 +195,8 @@ class DCGAN_Generator(nn.Module):
                  num_features=64,
                  image_channels=3,
                  image_size=64,
-                 gan_type="gan",
                  max_features=512,
+                 gan_type="gan",
                  fully_convolutional=True,
                  activation=None,
                  use_batchnorm=True,
