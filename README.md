@@ -39,13 +39,17 @@ python -m pip install face_recognition
 The last step takes some time because it installs dlib.
 When running pip, make sure you're running the one you installed in `automakeup` env.
 To ensure that, I activate `automakeup` env and use `python -m pip install` instead of simply `pip install`.
-Also, `cmake` need to be installed in a separate step before `face_recognition` for some reason. I'm thinking about using another lightweight face recognition library at the moment (this one is lightweight and simple in terms of API, but installing dlib is annoying).
+Also, `cmake` need to be installed in a separate step before `face_recognition` for some reason. I'm thinking about using another lightweight face recognition library at the moment (this one is lightweight and simple in terms of API, but installing dlib is annoying). If you still face an error from dlib, check whether you have gcc, g++, and make installed. If you are using a fresh Ubuntu container, for example, do this:
+```
+apt-get install gcc g++ make
+```
+And you'll be good to go.
 
-To run the training experiment, use:
+## Running the program
+
+To run the training experiment, do this:
 ```
 conda activate automakeup
 cd src
 python train.py
 ```
-
-For now, there are no testing/validation scripts. Stay tuned (can't promise anything though).
