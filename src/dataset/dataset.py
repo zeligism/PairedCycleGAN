@@ -6,7 +6,13 @@ import torch.utils.data as data_utils
 import random
 import glob
 from PIL import Image
-from face_recognition import face_landmarks
+
+try:
+    from face_recognition import face_landmarks
+except ImportError:
+    print("Could not import face_recognition module. Can't use MakeupDataset.")
+    def face_landmarks(_):
+        raise NotImplementedError("face_recognition module is not available.")
 
 
 def dict_to_list(d):
