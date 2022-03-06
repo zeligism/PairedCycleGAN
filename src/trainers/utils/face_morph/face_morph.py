@@ -50,7 +50,7 @@ def delauney(points, img, draw=False):
     """
     
     # Init subdiv and insert points
-    _, h, w =  np.array(img).shape
+    h, w, _ =  np.array(img).shape
     xs, ys = zip(*points)
     rect_x = min(0, min(xs))
     rect_y  = min(0, min(ys))
@@ -178,7 +178,7 @@ def face_morph(img1, img2, landmarks1=None, landmarks2=None, alpha=0.95, adjust_
     return img_array2
 
 
-def face_morph_video(filename, img1, img2, landmarks1=None, landmarks2=None, adjust_tone=True):
+def face_morph_video(filename, img1, img2, landmarks1=None, landmarks2=None, adjust_tone=True, plt_saving=False):
 
     # Convert PIL images to np arrays
     img_array1, img_array2 = np.array(img1), np.array(img2)
@@ -214,17 +214,23 @@ def face_morph_video(filename, img1, img2, landmarks1=None, landmarks2=None, adj
         for t1 in triangles1:
             t2 = tuple(points_map[p] for p in t1 if p in points_map)
             if len(t2) == 3:
-                warp_triangle(t1, t2, img_array1, morphed_img, alpha=alpha)
+                warp_triangle(t1, t2, img_array1, morphed_img, alpha=alpha)  # morphed_img is in-place op
 
-
-        
         # save frame of morphed image to animate later
-        morphed_imgs.append([plt.imshow(morphed_img, animated=True)])
-
+        if plt_saving: # using matplotlib to save the morphing video
+            morphed_imgs.append([plt.imshow(morphed_img, animated=True)])
+        else: # using cv2 instead
+            morphed_imgs.append(morphed_img)
+    
     # Make animation and play
-    ani = animation.ArtistAnimation(fig, morphed_imgs,
-                                    interval=200, blit=True, repeat_delay=1000)
-    ani.save(filename)
+    if plt_saving:
+        ani = animation.ArtistAnimation(fig, morphed_imgs, interval=200, blit=True, repeat_delay=1000)
+        ani.save(filename)
+    else:
+        out = cv2.VideoWriter(filename,cv2.VideoWriter_fourcc(*'mp4v'), 2, (morphed_imgs[0].shape[1],morphed_imgs[0].shape[0]))
+        for frame in morphed_imgs:
+            out.write(frame[:,:,::-1]) # RGB to BGR
+        out.release()
 
 
 def find_landmarks(img):
